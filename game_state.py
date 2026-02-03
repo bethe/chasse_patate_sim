@@ -268,6 +268,12 @@ class GameState:
         self.exhaustion_tokens: Dict[Rider, int] = {
             rider: 0 for player in self.players for rider in player.riders
         }
+        
+        # Checkpoint tracking for card drawing (every 10 fields: 10, 20, 30, 40, ...)
+        # Track which checkpoints each rider has reached
+        self.checkpoints_reached: Dict[Rider, Set[int]] = {
+            rider: set() for player in self.players for rider in player.riders
+        }
     
     def _deal_initial_hands(self):
         """Deal initial hands according to game rules:
@@ -478,3 +484,22 @@ class GameState:
             'hands_breakdown': [self._get_hand_breakdown(p) for p in self.players],
             'accounting_check': 'OK' if total_cards == 90 else f'ERROR: {total_cards} != 90'
         }
+    
+    def get_checkpoint_for_position(self, position: int) -> Optional[int]:
+        """Get the checkpoint number for a position (10, 20, 30, ...).
+        Returns None if position is not at or past a checkpoint."""
+        if position < 10:
+            return None
+        # Find the checkpoint this position is at or has passed
+        # E.g., position 15 -> checkpoint 10, position 23 -> checkpoint 20
+        return (position // 10) * 10
+    
+    def has_rider_reached_checkpoint(self, rider: Rider, checkpoint: int) -> bool:
+        """Check if a rider has already reached this checkpoint"""
+        return checkpoint in self.checkpoints_reached.get(rider, set())
+    
+    def mark_checkpoint_reached(self, rider: Rider, checkpoint: int):
+        """Mark that a rider has reached a checkpoint"""
+        if rider not in self.checkpoints_reached:
+            self.checkpoints_reached[rider] = set()
+        self.checkpoints_reached[rider].add(checkpoint)

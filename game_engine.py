@@ -142,10 +142,23 @@ class GameEngine:
         if points_earned > 0:
             player.points += points_earned
         
-        # Draw new card
-        new_card = self.state.draw_card()
-        if new_card:
-            player.hand.append(new_card)
+        # Check if rider reached new checkpoint(s) (every 10 fields)
+        cards_drawn = 0
+        checkpoints_reached = []
+        
+        # Check all checkpoints from old position to new position
+        for checkpoint in range(10, move.target_position + 1, 10):
+            if checkpoint > old_position and not self.state.has_rider_reached_checkpoint(move.rider, checkpoint):
+                # This is a new checkpoint for this rider
+                self.state.mark_checkpoint_reached(move.rider, checkpoint)
+                checkpoints_reached.append(checkpoint)
+                
+                # Draw 3 cards for this checkpoint
+                for _ in range(3):
+                    new_card = self.state.draw_card()
+                    if new_card:
+                        player.hand.append(new_card)
+                        cards_drawn += 1
         
         return {
             'success': True,
@@ -157,7 +170,9 @@ class GameEngine:
             'play_mode': move.play_mode.value,
             'used_slipstream': move.uses_slipstream,
             'points_earned': points_earned,
-            'exhaustion_tokens': self.state.exhaustion_tokens[move.rider]
+            'exhaustion_tokens': self.state.exhaustion_tokens[move.rider],
+            'checkpoints_reached': checkpoints_reached if checkpoints_reached else None,
+            'cards_drawn': cards_drawn
         }
     
     def _check_sprint_scoring(self, rider: Rider, position: int) -> int:
