@@ -384,16 +384,27 @@ class GameState:
         return positions
     
     def draw_card(self) -> Optional[Card]:
-        """Draw a card from the deck"""
+        """Draw a card from the deck, reshuffling discard pile if needed"""
+        # Check if we need to reshuffle before drawing
         if not self.deck:
-            # Reshuffle discard pile if deck is empty
             if self.discard_pile:
                 self.deck = self.discard_pile[:]
                 self.discard_pile = []
                 random.shuffle(self.deck)
             else:
                 return None
-        return self.deck.pop() if self.deck else None
+        
+        # Draw the card
+        card = self.deck.pop() if self.deck else None
+        
+        # CRITICAL FIX: Check again after drawing - if deck just became empty,
+        # immediately reshuffle so it's ready for the next draw
+        if not self.deck and self.discard_pile:
+            self.deck = self.discard_pile[:]
+            self.discard_pile = []
+            random.shuffle(self.deck)
+        
+        return card
     
     def advance_turn(self):
         """Move to next player's turn"""
