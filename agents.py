@@ -48,6 +48,17 @@ class Agent(ABC):
         """Choose a move given the current game state"""
         pass
     
+    def _try_use_team_car(self, valid_moves: List[Move], player: Player) -> Optional[Move]:
+        """Helper to check and return a Team Car move if appropriate"""
+        if should_use_team_car(player):
+            team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+            if team_car_moves:
+                worst_card = choose_card_to_discard(player)
+                if worst_card:
+                    team_car_moves[0].cards = [worst_card]
+                return team_car_moves[0]
+        return None
+    
     def __str__(self):
         return f"{self.name} (Player {self.player_id})"
 
@@ -79,13 +90,9 @@ class GreedyAgent(Agent):
             return None
         
         # If hand is low (< 3 cards), prefer Team Car
-        if should_use_team_car(player):
-            team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
-            if team_car_moves:
-                worst_card = choose_card_to_discard(player)
-                if worst_card:
-                    team_car_moves[0].cards = [worst_card]
-                return team_car_moves[0]
+        team_car_move = self._try_use_team_car(valid_moves, player)
+        if team_car_move:
+            return team_car_move
         
         # Otherwise return move with maximum distance
         non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
@@ -107,13 +114,9 @@ class LeadRiderAgent(Agent):
             return None
         
         # If hand is low, use Team Car
-        if should_use_team_car(player):
-            team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
-            if team_car_moves:
-                worst_card = choose_card_to_discard(player)
-                if worst_card:
-                    team_car_moves[0].cards = [worst_card]
-                return team_car_moves[0]
+        team_car_move = self._try_use_team_car(valid_moves, player)
+        if team_car_move:
+            return team_car_move
         
         # Find our leading rider
         lead_rider = max(player.riders, key=lambda r: r.position)
@@ -141,6 +144,11 @@ class BalancedAgent(Agent):
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
+            
+        # Check for Team Car usage
+        team_car_move = self._try_use_team_car(valid_moves, player)
+        if team_car_move:
+            return team_car_move
         
         # Find our most behind rider
         behind_rider = min(player.riders, key=lambda r: r.position)
@@ -166,6 +174,11 @@ class SprintHunterAgent(Agent):
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
+            
+        # Check for Team Car usage
+        team_car_move = self._try_use_team_car(valid_moves, player)
+        if team_car_move:
+            return team_car_move
         
         # Find moves that land on sprint tiles
         sprint_moves = []
@@ -196,6 +209,11 @@ class ConservativeAgent(Agent):
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
+            
+        # Check for Team Car usage
+        team_car_move = self._try_use_team_car(valid_moves, player)
+        if team_car_move:
+            return team_car_move
         
         # Take best move (simplified for action system)
         return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
@@ -212,6 +230,11 @@ class AggressiveAgent(Agent):
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
+            
+        # Check for Team Car usage
+        team_car_move = self._try_use_team_car(valid_moves, player)
+        if team_car_move:
+            return team_car_move
         
         # Take the best move for maximum distance
         return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
@@ -229,6 +252,11 @@ class CardTypeAgent(Agent):
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
+            
+        # Check for Team Car usage
+        team_car_move = self._try_use_team_car(valid_moves, player)
+        if team_car_move:
+            return team_car_move
         
         # Filter for moves that use preferred card type
         preferred_moves = [m for m in valid_moves 
@@ -253,6 +281,11 @@ class AdaptiveAgent(Agent):
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
+            
+        # Check for Team Car usage
+        team_car_move = self._try_use_team_car(valid_moves, player)
+        if team_car_move:
+            return team_car_move
         
         # Analyze terrain ahead for each rider
         scored_moves = []
@@ -295,8 +328,6 @@ class AdaptiveAgent(Agent):
             # If flat ahead and we used sprinter cards, bonus
             if climb_count == 0 and any(c.card_type == CardType.SPRINTER for c in move.cards):
                 score += 20
-        
-        return score
         
         return score
 
