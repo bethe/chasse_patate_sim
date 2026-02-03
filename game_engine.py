@@ -114,8 +114,10 @@ class GameEngine:
             if card not in player.hand:
                 return {'success': False, 'error': f'Card {card.card_type.value} not in hand'}
         
-        # Store old position
+        # Store old position and terrain
         old_position = move.rider.position
+        old_tile = self.state.get_tile_at_position(old_position)
+        old_terrain = old_tile.terrain.value if old_tile else "Unknown"
         
         # Calculate movement based on action type
         if move.action_type == ActionType.PULL:
@@ -136,6 +138,10 @@ class GameEngine:
         # Move the rider
         new_position = min(old_position + total_movement, self.state.track_length - 1)
         move.rider.position = new_position
+        
+        # Get new terrain
+        new_tile = self.state.get_tile_at_position(new_position)
+        new_terrain = new_tile.terrain.value if new_tile else "Unknown"
         
         # Remove cards from hand and discard
         for card in move.cards:
@@ -171,7 +177,9 @@ class GameEngine:
             'rider': f"P{move.rider.player_id}R{move.rider.rider_id}",
             'rider_type': move.rider.rider_type.value,
             'old_position': old_position,
+            'old_terrain': old_terrain,
             'new_position': new_position,
+            'new_terrain': new_terrain,
             'cards_played': [c.card_type.value for c in move.cards],
             'num_cards': len(move.cards),
             'movement': total_movement,

@@ -457,16 +457,25 @@ class GameState:
     
     def get_game_summary(self) -> Dict:
         """Get current game state summary"""
+        # Build rider positions with terrain info
+        rider_positions = {}
+        for player in self.players:
+            for rider in player.riders:
+                rider_key = f"P{rider.player_id}R{rider.rider_id}"
+                tile = self.get_tile_at_position(rider.position)
+                terrain = tile.terrain.value if tile else "Unknown"
+                rider_positions[rider_key] = {
+                    'position': rider.position,
+                    'terrain': terrain
+                }
+        
         return {
             'turn': self.current_turn,
             'current_player': self.current_player_idx,
             'player_scores': [p.points for p in self.players],
             'player_hand_sizes': [len(p.hand) for p in self.players],
             'player_hands_detailed': [self._get_hand_breakdown(p) for p in self.players],
-            'rider_positions': {
-                f"P{r.player_id}R{r.rider_id}": r.position 
-                for player in self.players for r in player.riders
-            },
+            'rider_positions': rider_positions,
             'game_over': self.game_over,
             'deck_size': len(self.deck),
             'discard_pile_size': len(self.discard_pile),
