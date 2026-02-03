@@ -107,7 +107,7 @@ class GameSimulator:
         
         # Game loop
         turn_count = 0
-        max_turns = 500  # Safety limit
+        max_turns = 150  # Turn limit per game
         
         while not state.game_over and turn_count < max_turns:
             current_player = state.get_current_player()
@@ -159,11 +159,26 @@ class GameSimulator:
         
         # Final check of game over state (in case we hit max_turns)
         if not state.game_over:
+            # Check normal game over conditions first
             state.check_game_over()
+            
+            # If still not game over and we hit turn limit, force end
+            if not state.game_over and turn_count >= max_turns:
+                state.game_over = True
+                if self.verbose:
+                    print(f"Game ended: Turn limit reached ({max_turns} turns)")
         
         # Calculate final results
         final_result = engine.process_end_of_race()
-        final_result['game_over_reason'] = state.get_game_over_reason()
+        
+        # Determine game over reason
+        base_reason = state.get_game_over_reason()
+        if turn_count >= max_turns and (base_reason is None or base_reason == "unknown"):
+            game_over_reason = "Turn limit reached"
+        else:
+            game_over_reason = base_reason
+        
+        final_result['game_over_reason'] = game_over_reason
         final_result['total_turns'] = turn_count
         
         # Count riders at finish
