@@ -13,7 +13,7 @@ class Move:
     """Represents a player's action (Pull, Attack, Draft, or TeamCar)"""
     action_type: ActionType
     rider: Rider
-    cards: List[Card]  # 1-3 cards for Pull/Attack, may be empty for Draft/TeamCar
+    cards: List[Card]  # 1-3 cards for Pull/Attack, 1 card for TeamCar (card to discard), empty for Draft
     
     def __post_init__(self):
         """Validate the move"""
@@ -21,6 +21,8 @@ class Move:
             assert 1 <= len(self.cards) <= 3, "Pull requires 1-3 cards"
         elif self.action_type == ActionType.ATTACK:
             assert len(self.cards) == 3, "Attack requires exactly 3 cards"
+        elif self.action_type == ActionType.TEAM_CAR:
+            assert len(self.cards) <= 1, "Team Car can specify 0 or 1 card to discard"
 
 
 class GameEngine:
@@ -44,7 +46,13 @@ class GameEngine:
             valid_moves.extend(attack_moves)
             
             # TODO: DRAFT actions (placeholder)
-            # TODO: TEAM_CAR actions (placeholder)
+        
+        # TEAM CAR action (available once per turn, not per rider)
+        # Player draws 2 cards and discards 1 card of their choice
+        if len(player.hand) > 0:  # Need at least 1 card to discard
+            # For simplicity, we'll just add one TEAM_CAR move
+            # The actual card to discard will be chosen during execution
+            valid_moves.append(Move(ActionType.TEAM_CAR, player.riders[0], []))
         
         return valid_moves
     
@@ -130,8 +138,8 @@ class GameEngine:
             # Placeholder
             return {'success': False, 'error': 'Draft action not yet implemented'}
         elif move.action_type == ActionType.TEAM_CAR:
-            # Placeholder
-            return {'success': False, 'error': 'Team Car action not yet implemented'}
+            # Team Car: Draw 2 cards, discard 1 card
+            return self._execute_team_car(move, player, old_position, old_terrain)
         else:
             return {'success': False, 'error': f'Unknown action type: {move.action_type}'}
         
@@ -219,6 +227,53 @@ class GameEngine:
                 total += card.get_movement(current_tile.terrain, PlayMode.ATTACK)
         
         return total
+    
+    def _execute_team_car(self, move: Move, player: Player, old_position: int, old_terrain: str) -> dict:
+        """Execute Team Car action: Draw 2 cards, discard 1 card"""
+        # Draw 2 cards
+        cards_drawn = []
+        for _ in range(2):
+            new_card = self.state.draw_card()
+            if new_card:
+                player.hand.append(new_card)
+                cards_drawn.append(new_card.card_type.value)
+        
+        # Choose which card to discard
+        # For now, agents will pass which card to discard via move.cards
+        # If no card specified, discard the first card in hand
+        if move.cards and len(move.cards) > 0:
+            card_to_discard = move.cards[0]
+        else:
+            # Default: discard first card in hand
+            card_to_discard = player.hand[0] if player.hand else None
+        
+        card_discarded = None
+        if card_to_discard and card_to_discard in player.hand:
+            player.hand.remove(card_to_discard)
+            self.state.discard_pile.append(card_to_discard)
+            card_discarded = card_to_discard.card_type.value
+        
+        # Rider doesn't move
+        new_position = old_position
+        new_terrain = old_terrain
+        
+        return {
+            'success': True,
+            'action': 'TeamCar',
+            'rider': f"P{move.rider.player_id}R{move.rider.rider_id}",
+            'rider_type': move.rider.rider_type.value,
+            'old_position': old_position,
+            'old_terrain': old_terrain,
+            'new_position': new_position,
+            'new_terrain': new_terrain,
+            'cards_played': [],
+            'cards_drawn': cards_drawn,
+            'card_discarded': card_discarded,
+            'num_cards': 0,
+            'movement': 0,
+            'points_earned': 0,
+            'checkpoints_reached': None
+        }
     
     def _check_sprint_scoring(self, rider: Rider, position: int) -> int:
         """Check if rider scores points at a sprint"""

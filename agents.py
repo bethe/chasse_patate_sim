@@ -19,6 +19,23 @@ def calculate_move_distance(engine: GameEngine, move: Move) -> int:
     return 0
 
 
+def should_use_team_car(player: Player, hand_threshold: int = 3) -> bool:
+    """Helper function to determine if agent should use Team Car"""
+    return len(player.hand) < hand_threshold
+
+
+def choose_card_to_discard(player: Player) -> Optional[Card]:
+    """Helper function to choose worst card to discard (Energy first)"""
+    if not player.hand:
+        return None
+    # Prefer discarding Energy cards
+    energy_cards = [c for c in player.hand if c.is_energy_card()]
+    if energy_cards:
+        return energy_cards[0]
+    # Otherwise discard first card
+    return player.hand[0]
+
+
 class Agent(ABC):
     """Base class for AI agents"""
     
@@ -56,13 +73,25 @@ class GreedyAgent(Agent):
         super().__init__(player_id, "Greedy")
     
     def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
-        """Choose action that advances furthest"""
+        """Choose action that advances furthest, or Team Car if low on cards"""
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
         
-        # Return move with maximum distance
-        return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
+        # If hand is low (< 3 cards), prefer Team Car
+        if should_use_team_car(player):
+            team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+            if team_car_moves:
+                worst_card = choose_card_to_discard(player)
+                if worst_card:
+                    team_car_moves[0].cards = [worst_card]
+                return team_car_moves[0]
+        
+        # Otherwise return move with maximum distance
+        non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
+        if non_team_car:
+            return max(non_team_car, key=lambda m: calculate_move_distance(engine, m))
+        return valid_moves[0]
 
 
 class LeadRiderAgent(Agent):
@@ -72,19 +101,30 @@ class LeadRiderAgent(Agent):
         super().__init__(player_id, "LeadRider")
     
     def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
-        """Advance the leading rider"""
+        """Advance the leading rider, use Team Car if low on cards"""
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
+        
+        # If hand is low, use Team Car
+        if should_use_team_car(player):
+            team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+            if team_car_moves:
+                worst_card = choose_card_to_discard(player)
+                if worst_card:
+                    team_car_moves[0].cards = [worst_card]
+                return team_car_moves[0]
         
         # Find our leading rider
         lead_rider = max(player.riders, key=lambda r: r.position)
         
         # Filter moves for lead rider
-        lead_moves = [m for m in valid_moves if m.rider == lead_rider]
+        lead_moves = [m for m in valid_moves if m.rider == lead_rider and m.action_type != ActionType.TEAM_CAR]
         if not lead_moves:
             # If no moves for lead rider, pick best overall
-            return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
+            non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
+            if non_team_car:
+                return max(non_team_car, key=lambda m: calculate_move_distance(engine, m))
         
         # Pick move that advances lead rider most
         return max(lead_moves, key=lambda m: calculate_move_distance(engine, m))
