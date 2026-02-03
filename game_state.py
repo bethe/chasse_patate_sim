@@ -411,7 +411,8 @@ class GameState:
             },
             'game_over': self.game_over,
             'deck_size': len(self.deck),
-            'discard_size': len(self.discard_pile)
+            'discard_pile_size': len(self.discard_pile),
+            'discard_pile_breakdown': self._get_pile_breakdown(self.discard_pile)
         }
     
     def _get_hand_breakdown(self, player: Player) -> Dict:
@@ -435,3 +436,45 @@ class GameState:
                 breakdown['climber'] += 1
         
         return breakdown
+    
+    def _get_pile_breakdown(self, pile: List[Card]) -> Dict:
+        """Get detailed breakdown of a card pile (deck or discard)"""
+        breakdown = {
+            'energy': 0,
+            'rouleur': 0,
+            'sprinter': 0,
+            'climber': 0,
+            'total': len(pile)
+        }
+        
+        for card in pile:
+            if card.card_type == CardType.ENERGY:
+                breakdown['energy'] += 1
+            elif card.card_type == CardType.ROULEUR:
+                breakdown['rouleur'] += 1
+            elif card.card_type == CardType.SPRINTER:
+                breakdown['sprinter'] += 1
+            elif card.card_type == CardType.CLIMBER:
+                breakdown['climber'] += 1
+        
+        return breakdown
+    
+    def get_card_distribution_summary(self) -> Dict:
+        """Get a complete accounting of where all 90 cards are"""
+        # Count cards in all locations
+        cards_in_hands = sum(len(p.hand) for p in self.players)
+        cards_in_deck = len(self.deck)
+        cards_in_discard = len(self.discard_pile)
+        total_cards = cards_in_hands + cards_in_deck + cards_in_discard
+        
+        return {
+            'total_cards': total_cards,
+            'expected_total': 90,
+            'cards_in_deck': cards_in_deck,
+            'cards_in_hands': cards_in_hands,
+            'cards_in_discard': cards_in_discard,
+            'deck_breakdown': self._get_pile_breakdown(self.deck),
+            'discard_breakdown': self._get_pile_breakdown(self.discard_pile),
+            'hands_breakdown': [self._get_hand_breakdown(p) for p in self.players],
+            'accounting_check': 'OK' if total_cards == 90 else f'ERROR: {total_cards} != 90'
+        }
