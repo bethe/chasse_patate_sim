@@ -23,6 +23,14 @@ class PlayMode(Enum):
     ATTACK = "Attack"
 
 
+class ActionType(Enum):
+    """Types of actions a player can take"""
+    PULL = "Pull"
+    ATTACK = "Attack"
+    DRAFT = "Draft"  # Placeholder - to be implemented
+    TEAM_CAR = "TeamCar"  # Placeholder - to be implemented
+
+
 class TerrainType(Enum):
     """Types of terrain"""
     FLAT = "Flat"

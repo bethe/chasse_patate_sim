@@ -5,16 +5,22 @@ Handles game logic, move validation, and rule enforcement
 
 from typing import List, Tuple, Optional, Set
 from dataclasses import dataclass
-from game_state import GameState, Player, Rider, Card, TerrainType, CardType, PlayMode
+from game_state import GameState, Player, Rider, Card, TerrainType, CardType, PlayMode, ActionType
 
 
 @dataclass
 class Move:
-    """Represents a player's move"""
+    """Represents a player's action (Pull, Attack, Draft, or TeamCar)"""
+    action_type: ActionType
     rider: Rider
-    card: Card
-    target_position: int
-    play_mode: PlayMode  # Pull or Attack
+    cards: List[Card]  # 1-3 cards for Pull/Attack, may be empty for Draft/TeamCar
+    
+    def __post_init__(self):
+        """Validate the move"""
+        if self.action_type == ActionType.PULL:
+            assert 1 <= len(self.cards) <= 3, "Pull requires 1-3 cards"
+        elif self.action_type == ActionType.ATTACK:
+            assert len(self.cards) == 3, "Attack requires exactly 3 cards"
 
 
 class GameEngine:
@@ -24,48 +30,74 @@ class GameEngine:
         self.state = game_state
     
     def get_valid_moves(self, player: Player) -> List[Move]:
-        """Get all valid moves for a player"""
+        """Get all valid actions (Pull, Attack, Draft, TeamCar) for a player"""
         valid_moves = []
         
+        # Generate moves for each rider
         for rider in player.riders:
-            for card in player.hand:
-                # Check if card can be played on this rider
-                if not card.can_play_on_rider(rider.rider_type):
-                    continue
-                
-                # Get possible moves with this card
-                # Try both Pull and Attack modes (except for Energy which is always the same)
-                if card.is_energy_card():
-                    moves = self._get_moves_for_rider_card(rider, card, PlayMode.PULL)
-                    valid_moves.extend(moves)
-                else:
-                    # Try Pull mode
-                    moves_pull = self._get_moves_for_rider_card(rider, card, PlayMode.PULL)
-                    valid_moves.extend(moves_pull)
-                    
-                    # Try Attack mode
-                    moves_attack = self._get_moves_for_rider_card(rider, card, PlayMode.ATTACK)
-                    valid_moves.extend(moves_attack)
+            # PULL actions (1-3 cards)
+            pull_moves = self._get_pull_moves(rider, player)
+            valid_moves.extend(pull_moves)
+            
+            # ATTACK actions (exactly 3 cards, must include at least 1 matching rider card)
+            attack_moves = self._get_attack_moves(rider, player)
+            valid_moves.extend(attack_moves)
+            
+            # TODO: DRAFT actions (placeholder)
+            # TODO: TEAM_CAR actions (placeholder)
         
         return valid_moves
     
-    def _get_moves_for_rider_card(self, rider: Rider, card: Card, play_mode: PlayMode) -> List[Move]:
-        """Get all valid moves for a specific rider-card combination"""
+    def _get_pull_moves(self, rider: Rider, player: Player) -> List[Move]:
+        """Generate all valid Pull moves for a rider (1-3 cards)"""
         moves = []
-        current_pos = rider.position
-        current_tile = self.state.get_tile_at_position(current_pos)
         
-        if not current_tile:
+        # Get eligible cards: matching rider cards + energy cards
+        eligible_cards = [c for c in player.hand 
+                         if c.is_energy_card() or c.card_type == rider.rider_type]
+        
+        if not eligible_cards:
             return moves
         
-        # Base movement for current terrain
-        base_movement = card.get_movement(current_tile.terrain, play_mode)
+        # Generate combinations: 1 card, 2 cards, or 3 cards
+        from itertools import combinations
         
-        # Generate all possible moves from 1 to base_movement
-        for distance in range(1, base_movement + 1):
-            target_pos = current_pos + distance
-            if self._is_valid_position(target_pos):
-                moves.append(Move(rider, card, target_pos, play_mode))
+        for num_cards in [1, 2, 3]:
+            if len(eligible_cards) >= num_cards:
+                for card_combo in combinations(range(len(eligible_cards)), num_cards):
+                    cards = [eligible_cards[i] for i in card_combo]
+                    moves.append(Move(ActionType.PULL, rider, cards))
+        
+        return moves
+    
+    def _get_attack_moves(self, rider: Rider, player: Player) -> List[Move]:
+        """Generate all valid Attack moves for a rider (exactly 3 cards, at least 1 matching rider card)"""
+        moves = []
+        
+        # Need at least 3 cards in hand
+        if len(player.hand) < 3:
+            return moves
+        
+        # Get eligible cards
+        matching_rider_cards = [c for c in player.hand if c.card_type == rider.rider_type]
+        energy_cards = [c for c in player.hand if c.is_energy_card()]
+        
+        # Must have at least 1 matching rider card
+        if not matching_rider_cards:
+            return moves
+        
+        # Generate all 3-card combinations from hand
+        from itertools import combinations
+        
+        for card_combo in combinations(player.hand, 3):
+            cards = list(card_combo)
+            # Check if at least one card matches the rider type
+            has_matching_card = any(c.card_type == rider.rider_type for c in cards)
+            # Check if all cards are eligible (matching rider card or energy)
+            all_eligible = all(c.is_energy_card() or c.card_type == rider.rider_type for c in cards)
+            
+            if has_matching_card and all_eligible:
+                moves.append(Move(ActionType.ATTACK, rider, cards))
         
         return moves
     
@@ -77,26 +109,41 @@ class GameEngine:
         """Execute a move and return results"""
         player = self.state.players[move.rider.player_id]
         
-        # Validate move
-        if move.card not in player.hand:
-            return {'success': False, 'error': 'Card not in hand'}
-        
-        # Validate card can be played on this rider
-        if not move.card.can_play_on_rider(move.rider.rider_type):
-            return {'success': False, 'error': 'Card cannot be played on this rider type'}
+        # Validate cards are in hand
+        for card in move.cards:
+            if card not in player.hand:
+                return {'success': False, 'error': f'Card {card.card_type.value} not in hand'}
         
         # Store old position
         old_position = move.rider.position
         
-        # Move the rider
-        move.rider.position = move.target_position
+        # Calculate movement based on action type
+        if move.action_type == ActionType.PULL:
+            total_movement = self._calculate_pull_movement(move.rider, move.cards)
+            action_name = "Pull"
+        elif move.action_type == ActionType.ATTACK:
+            total_movement = self._calculate_attack_movement(move.rider, move.cards)
+            action_name = "Attack"
+        elif move.action_type == ActionType.DRAFT:
+            # Placeholder
+            return {'success': False, 'error': 'Draft action not yet implemented'}
+        elif move.action_type == ActionType.TEAM_CAR:
+            # Placeholder
+            return {'success': False, 'error': 'Team Car action not yet implemented'}
+        else:
+            return {'success': False, 'error': f'Unknown action type: {move.action_type}'}
         
-        # Remove card from hand and discard
-        player.hand.remove(move.card)
-        self.state.discard_pile.append(move.card)
+        # Move the rider
+        new_position = min(old_position + total_movement, self.state.track_length - 1)
+        move.rider.position = new_position
+        
+        # Remove cards from hand and discard
+        for card in move.cards:
+            player.hand.remove(card)
+            self.state.discard_pile.append(card)
         
         # Check for sprint points
-        points_earned = self._check_sprint_scoring(move.rider, move.target_position)
+        points_earned = self._check_sprint_scoring(move.rider, new_position)
         if points_earned > 0:
             player.points += points_earned
         
@@ -105,7 +152,7 @@ class GameEngine:
         checkpoints_reached = []
         
         # Check all checkpoints from old position to new position
-        for checkpoint in range(10, move.target_position + 1, 10):
+        for checkpoint in range(10, new_position + 1, 10):
             if checkpoint > old_position and not self.state.has_rider_reached_checkpoint(move.rider, checkpoint):
                 # This is a new checkpoint for this rider
                 self.state.mark_checkpoint_reached(move.rider, checkpoint)
@@ -120,16 +167,50 @@ class GameEngine:
         
         return {
             'success': True,
+            'action': action_name,
             'rider': f"P{move.rider.player_id}R{move.rider.rider_id}",
             'rider_type': move.rider.rider_type.value,
             'old_position': old_position,
-            'new_position': move.target_position,
-            'card_played': move.card.card_type.value,
-            'play_mode': move.play_mode.value,
+            'new_position': new_position,
+            'cards_played': [c.card_type.value for c in move.cards],
+            'num_cards': len(move.cards),
+            'movement': total_movement,
             'points_earned': points_earned,
             'checkpoints_reached': checkpoints_reached if checkpoints_reached else None,
             'cards_drawn': cards_drawn
         }
+    
+    def _calculate_pull_movement(self, rider: Rider, cards: List[Card]) -> int:
+        """Calculate total movement for a Pull action"""
+        current_tile = self.state.get_tile_at_position(rider.position)
+        if not current_tile:
+            return 0
+        
+        total = 0
+        for card in cards:
+            if card.is_energy_card():
+                total += 1
+            else:
+                # Use Pull values
+                total += card.get_movement(current_tile.terrain, PlayMode.PULL)
+        
+        return total
+    
+    def _calculate_attack_movement(self, rider: Rider, cards: List[Card]) -> int:
+        """Calculate total movement for an Attack action"""
+        current_tile = self.state.get_tile_at_position(rider.position)
+        if not current_tile:
+            return 0
+        
+        total = 0
+        for card in cards:
+            if card.is_energy_card():
+                total += 1
+            else:
+                # Use Attack values
+                total += card.get_movement(current_tile.terrain, PlayMode.ATTACK)
+        
+        return total
     
     def _check_sprint_scoring(self, rider: Rider, position: int) -> int:
         """Check if rider scores points at a sprint"""

@@ -1,6 +1,102 @@
 # Update Summary - Game Implementation
 
-## Latest Changes (Slipstream & Exhaustion Removed)
+## Latest Changes (Action-Based Turn System)
+
+### 1. Four Player Actions Implemented
+Players now choose from 4 distinct actions on their turn:
+
+**1️⃣ PULL Action:**
+- Play 1, 2, or 3 cards
+- Eligible cards: Matching rider card (Rouleur/Sprinter/Climber) + Energy cards
+- Movement = sum of all card values (Pull mode)
+- Card values based on terrain at START of move
+
+**2️⃣ ATTACK Action:**
+- Must play exactly 3 cards
+- Must include at least 1 matching rider card
+- Can mix with Energy cards
+- Movement = sum of all card values (Attack mode)
+- Generally higher values than Pull on favorable terrain
+
+**3️⃣ DRAFT Action:** (Placeholder - not yet implemented)
+
+**4️⃣ TEAM CAR Action:** (Placeholder - not yet implemented)
+
+### 2. Card Value System
+**Energy Cards:**
+- Always value = 1 (regardless of terrain or mode)
+
+**Rider Cards:**
+- Value depends on:
+  - Current terrain (where rider starts)
+  - Play mode (Pull vs Attack)
+- Example: Sprinter on Flat terrain
+  - Pull mode: 1 movement
+  - Attack mode: 3 movement
+
+### 3. Action Rules
+**Pull (1-3 cards):**
+- Can play any combination of matching rider cards + energy
+- More flexible, use fewer cards
+- Lower movement values
+
+**Attack (exactly 3 cards):**
+- Must use all 3 cards
+- Must include at least 1 matching rider card
+- Higher risk (uses more cards) but higher reward (better movement)
+
+### 4. Move Data Structure
+```json
+{
+  "action": "Attack",
+  "rider": "P0R1",
+  "rider_type": "Sprinter",
+  "old_position": 0,
+  "new_position": 7,
+  "cards_played": ["Energy", "Sprinter", "Sprinter"],
+  "num_cards": 3,
+  "movement": 7,
+  "checkpoints_reached": null,
+  "cards_drawn": 0
+}
+```
+
+### 5. Code Changes
+**New Classes:**
+- `ActionType` enum: PULL, ATTACK, DRAFT, TEAM_CAR
+- Updated `Move` class: Now contains action_type and list of cards
+
+**Updated Methods:**
+- `get_valid_moves()`: Generates all valid Pull and Attack actions
+- `_get_pull_moves()`: Generates 1-3 card Pull combinations
+- `_get_attack_moves()`: Generates 3-card Attack combinations with validation
+- `execute_move()`: Calculates total movement from multiple cards
+- `_calculate_pull_movement()`: Sums Pull values
+- `_calculate_attack_movement()`: Sums Attack values
+
+**Agents Updated:**
+- Added `calculate_move_distance()` helper function
+- Greedy and Random agents fully functional
+- Other agents simplified (will be enhanced later)
+
+### 6. Testing Results
+```
+✓ Game completed: 9 turns
+✓ Actions working: Pull and Attack
+✓ Multi-card plays functional
+✓ Movement calculation correct
+Sample: Attack with 3 cards → 7 spaces movement
+```
+
+### 7. Strategic Implications
+- **Pull**: Conserve cards, steady progress
+- **Attack**: Spend cards for big gains
+- **Card management**: Balance between conserving and using cards effectively
+- **Terrain awareness**: Attack values much higher on favorable terrain
+
+---
+
+## Previous Changes (Slipstream & Exhaustion Removed)
 
 ### 1. Mechanics Removed
 **Removed functionality:**

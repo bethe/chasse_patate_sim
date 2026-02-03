@@ -6,8 +6,17 @@ Different AI strategies for testing game balance
 from abc import ABC, abstractmethod
 from typing import List, Optional
 import random
-from game_state import Player, Card, CardType, TerrainType, PlayMode
+from game_state import Player, Card, CardType, TerrainType, PlayMode, ActionType
 from game_engine import GameEngine, Move
+
+
+def calculate_move_distance(engine: GameEngine, move: Move) -> int:
+    """Helper function to calculate how far a move will advance a rider"""
+    if move.action_type == ActionType.PULL:
+        return engine._calculate_pull_movement(move.rider, move.cards)
+    elif move.action_type == ActionType.ATTACK:
+        return engine._calculate_attack_movement(move.rider, move.cards)
+    return 0
 
 
 class Agent(ABC):
@@ -47,13 +56,13 @@ class GreedyAgent(Agent):
         super().__init__(player_id, "Greedy")
     
     def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
-        """Choose move that advances furthest"""
+        """Choose action that advances furthest"""
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
         
-        # Sort by distance gained
-        return max(valid_moves, key=lambda m: m.target_position - m.rider.position)
+        # Return move with maximum distance
+        return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
 
 
 class LeadRiderAgent(Agent):
