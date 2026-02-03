@@ -47,6 +47,16 @@ def example_batch_simulation():
     for player_id in range(3):
         wins = winners.count(player_id)
         print(f"Player {player_id} won {wins} games ({wins/len(results)*100:.1f}%)")
+    
+    # Game over reasons
+    print("\nGame Over Reasons:")
+    reasons = {}
+    for r in results:
+        reason = r.get('game_over_reason', 'unknown')
+        reasons[reason] = reasons.get(reason, 0) + 1
+    
+    for reason, count in sorted(reasons.items(), key=lambda x: x[1], reverse=True):
+        print(f"  {reason}: {count} games ({count/len(results)*100:.1f}%)")
 
 
 def example_tournament():
@@ -79,6 +89,24 @@ def example_tournament():
               f"avg score: {matchup['agent1_total_score']/matchup['games_played']:.1f}")
         print(f"  {matchup['agent2_type']}: {matchup['agent2_wins']} wins, "
               f"avg score: {matchup['agent2_total_score']/matchup['games_played']:.1f}")
+    
+    # Analyze game over reasons
+    print("\n" + "-"*80)
+    print("Game Over Reasons")
+    print("-"*80)
+    
+    analyzer = GameAnalyzer(log_dir="game_logs")
+    logs = analyzer.load_game_logs()
+    
+    reasons = {}
+    for log in logs:
+        reason = log.get('final_result', {}).get('game_over_reason', 'unknown')
+        reasons[reason] = reasons.get(reason, 0) + 1
+    
+    total_games = len(logs)
+    for reason, count in sorted(reasons.items(), key=lambda x: x[1], reverse=True):
+        percentage = (count / total_games) * 100
+        print(f"  {reason}: {count} games ({percentage:.1f}%)")
 
 
 def example_full_analysis():
@@ -145,6 +173,16 @@ def example_test_specific_matchup():
         print("\n⚠️  WARNING: Significant imbalance detected!")
     else:
         print("\n✓ Strategies appear balanced")
+    
+    # Game over reasons
+    print("\nGame Over Reasons:")
+    reasons = {}
+    for r in results:
+        reason = r.get('game_over_reason', 'unknown')
+        reasons[reason] = reasons.get(reason, 0) + 1
+    
+    for reason, count in sorted(reasons.items(), key=lambda x: x[1], reverse=True):
+        print(f"  {reason}: {count} games ({count/len(results)*100:.1f}%)")
 
 
 def show_available_agents():

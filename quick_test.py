@@ -95,6 +95,31 @@ def quick_balance_test():
     else:
         print("\n✓ Score distribution looks reasonable")
     
+    # Analyze game over reasons
+    print("\n" + "-"*80)
+    print("GAME OVER REASONS")
+    print("-"*80)
+    
+    reasons = {}
+    for log in logs:
+        reason = log.get('final_result', {}).get('game_over_reason', 'unknown')
+        reasons[reason] = reasons.get(reason, 0) + 1
+    
+    total_games = len(logs)
+    for reason, count in sorted(reasons.items(), key=lambda x: x[1], reverse=True):
+        percentage = (count / total_games) * 100
+        print(f"{reason}: {count} games ({percentage:.1f}%)")
+    
+    # Provide feedback on game endings
+    if reasons.get('Turn limit reached', 0) > total_games * 0.5:
+        print("\n⚠️  More than 50% of games hit turn limit - games may be too slow")
+        print("   Consider: reducing turn limit, adjusting TeamCar threshold, or track length")
+    elif reasons.get('5_riders_finished', 0) > total_games * 0.8:
+        print("\n✓ Most games finish naturally with riders completing the race")
+    elif reasons.get('players_out_of_cards', 0) > total_games * 0.3:
+        print("\n⚠️  Many games end with players out of cards")
+        print("   Consider: adjusting card distribution or checkpoint rewards")
+    
     print("\n" + "="*80)
     print("QUICK TEST COMPLETE")
     print("="*80)
