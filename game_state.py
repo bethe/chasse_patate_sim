@@ -395,13 +395,50 @@ class GameState:
             self.current_turn += 1
     
     def check_game_over(self) -> bool:
-        """Check if game is over (any rider crossed finish line)"""
+        """Check if game is over based on two conditions:
+        1. Five riders have reached the finish line
+        2. All players have run out of cards (and deck is empty)
+        """
+        # Condition 1: Check if 5 riders have finished
+        finish_position = self.track_length - 1
+        riders_finished = 0
+        
         for player in self.players:
             for rider in player.riders:
-                if rider.position >= self.track_length - 1:
-                    self.game_over = True
-                    return True
+                if rider.position >= finish_position:
+                    riders_finished += 1
+        
+        if riders_finished >= 5:
+            self.game_over = True
+            return True
+        
+        # Condition 2: Check if all players are out of cards and deck is empty
+        if len(self.deck) == 0:
+            all_players_empty = all(len(player.hand) == 0 for player in self.players)
+            if all_players_empty:
+                self.game_over = True
+                return True
+        
         return False
+    
+    def get_game_over_reason(self) -> Optional[str]:
+        """Get the reason why the game ended"""
+        if not self.game_over:
+            return None
+        
+        # Check which condition triggered game over
+        finish_position = self.track_length - 1
+        riders_finished = sum(1 for player in self.players 
+                             for rider in player.riders 
+                             if rider.position >= finish_position)
+        
+        if riders_finished >= 5:
+            return f"5_riders_finished ({riders_finished} riders at finish)"
+        
+        if len(self.deck) == 0 and all(len(p.hand) == 0 for p in self.players):
+            return "players_out_of_cards"
+        
+        return "unknown"
     
     def get_game_summary(self) -> Dict:
         """Get current game state summary"""

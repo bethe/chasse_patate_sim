@@ -119,6 +119,17 @@ class GameSimulator:
             if move is None:
                 if self.verbose:
                     print(f"Turn {turn_count}: {agent} has no valid moves!")
+                
+                # Check if player is out of cards
+                if len(current_player.hand) == 0:
+                    if self.verbose:
+                        print(f"  {agent} has no cards left!")
+                    # Check if game should end (all players out of cards)
+                    if state.check_game_over():
+                        if self.verbose:
+                            print(f"  Game ending: {state.get_game_over_reason()}")
+                        break
+                
                 state.advance_turn()
                 continue
             
@@ -146,6 +157,15 @@ class GameSimulator:
         
         # Calculate final results
         final_result = engine.process_end_of_race()
+        final_result['game_over_reason'] = state.get_game_over_reason()
+        final_result['total_turns'] = turn_count
+        
+        # Count riders at finish
+        finish_position = state.track_length - 1
+        riders_at_finish = sum(1 for player in state.players 
+                              for rider in player.riders 
+                              if rider.position >= finish_position)
+        final_result['riders_at_finish'] = riders_at_finish
         
         if self.verbose:
             print(f"\n{'='*60}")
