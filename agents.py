@@ -84,10 +84,10 @@ class LeadRiderAgent(Agent):
         lead_moves = [m for m in valid_moves if m.rider == lead_rider]
         if not lead_moves:
             # If no moves for lead rider, pick best overall
-            return max(valid_moves, key=lambda m: m.target_position)
+            return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
         
         # Pick move that advances lead rider most
-        return max(lead_moves, key=lambda m: m.target_position - m.rider.position)
+        return max(lead_moves, key=lambda m: calculate_move_distance(engine, m))
 
 
 class BalancedAgent(Agent):
@@ -109,10 +109,10 @@ class BalancedAgent(Agent):
         behind_moves = [m for m in valid_moves if m.rider == behind_rider]
         if not behind_moves:
             # If no moves available, take best move overall
-            return max(valid_moves, key=lambda m: m.target_position)
+            return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
         
         # Pick move that advances behind rider most
-        return max(behind_moves, key=lambda m: m.target_position - m.rider.position)
+        return max(behind_moves, key=lambda m: calculate_move_distance(engine, m))
 
 
 class SprintHunterAgent(Agent):
@@ -130,17 +130,19 @@ class SprintHunterAgent(Agent):
         # Find moves that land on sprint tiles
         sprint_moves = []
         for move in valid_moves:
-            tile = engine.state.get_tile_at_position(move.target_position)
+            distance = calculate_move_distance(engine, move)
+            target_pos = move.rider.position + distance
+            tile = engine.state.get_tile_at_position(target_pos)
             if tile and tile.terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
                 sprint_moves.append(move)
         
         # If we can reach a sprint, prioritize those moves
         if sprint_moves:
             # Choose the sprint move that gets us furthest
-            return max(sprint_moves, key=lambda m: m.target_position)
+            return max(sprint_moves, key=lambda m: calculate_move_distance(engine, m))
         
         # Otherwise, advance furthest
-        return max(valid_moves, key=lambda m: m.target_position - m.rider.position)
+        return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
 
 
 class ConservativeAgent(Agent):
@@ -155,8 +157,8 @@ class ConservativeAgent(Agent):
         if not valid_moves:
             return None
         
-        # Take best move (no special slipstream logic needed anymore)
-        return max(valid_moves, key=lambda m: m.target_position - m.rider.position)
+        # Take best move (simplified for action system)
+        return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
 
 
 class AggressiveAgent(Agent):
@@ -172,7 +174,7 @@ class AggressiveAgent(Agent):
             return None
         
         # Take the best move for maximum distance
-        return max(valid_moves, key=lambda m: m.target_position - m.rider.position)
+        return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
 
 
 class CardTypeAgent(Agent):
@@ -188,15 +190,16 @@ class CardTypeAgent(Agent):
         if not valid_moves:
             return None
         
-        # Filter for preferred card type
-        preferred_moves = [m for m in valid_moves if m.card.card_type == self.preferred_type]
+        # Filter for moves that use preferred card type
+        preferred_moves = [m for m in valid_moves 
+                          if any(c.card_type == self.preferred_type for c in m.cards)]
         
         if preferred_moves:
             # Play preferred card type, maximizing distance
-            return max(preferred_moves, key=lambda m: m.target_position - m.rider.position)
+            return max(preferred_moves, key=lambda m: calculate_move_distance(engine, m))
         else:
             # Play any card for maximum distance
-            return max(valid_moves, key=lambda m: m.target_position - m.rider.position)
+            return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
 
 
 class AdaptiveAgent(Agent):
@@ -225,11 +228,14 @@ class AdaptiveAgent(Agent):
         score = 0.0
         
         # Base score: distance gained
-        distance_gained = move.target_position - move.rider.position
+        distance_gained = calculate_move_distance(engine, move)
         score += distance_gained * 10
         
+        # Calculate target position
+        target_pos = move.rider.position + distance_gained
+        
         # Check terrain at destination
-        tile = engine.state.get_tile_at_position(move.target_position)
+        tile = engine.state.get_tile_at_position(target_pos)
         if tile:
             # Bonus for landing on sprint or finish
             if tile.terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
@@ -238,18 +244,19 @@ class AdaptiveAgent(Agent):
             # Check upcoming terrain (next 5 tiles)
             climb_count = 0
             for offset in range(1, 6):
-                next_tile = engine.state.get_tile_at_position(move.target_position + offset)
+                next_tile = engine.state.get_tile_at_position(target_pos + offset)
                 if next_tile and next_tile.terrain == TerrainType.CLIMB:
                     climb_count += 1
             
-            # If climbs ahead and we have a climber card, bonus
-            if climb_count >= 2 and move.card.card_type == CardType.CLIMBER:
+            # If climbs ahead and we used climber cards, bonus
+            if climb_count >= 2 and any(c.card_type == CardType.CLIMBER for c in move.cards):
                 score += 20
             
-            # If flat ahead and we have sprinter, bonus
-            if climb_count == 0 and move.card.card_type == CardType.SPRINTER:
+            # If flat ahead and we used sprinter cards, bonus
+            if climb_count == 0 and any(c.card_type == CardType.SPRINTER for c in move.cards):
                 score += 20
         
+        return score
         
         return score
 
