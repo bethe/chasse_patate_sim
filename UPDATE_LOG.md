@@ -1,6 +1,115 @@
 # Update Summary - Game Implementation
 
-## Latest Changes (Checkpoint-Based Card Drawing)
+## Latest Changes (Slipstream & Exhaustion Removed)
+
+### 1. Mechanics Removed
+**Removed functionality:**
+- ✅ Slipstream moves (extra movement by passing other riders)
+- ✅ Exhaustion tokens (penalty for slipstreaming)
+- ✅ All related tracking and scoring
+
+### 2. Simplified Movement
+**Now:**
+- Riders move exactly the distance shown on their card for the current terrain
+- No bonus movement for passing other riders
+- No penalties or tokens to track
+- Cleaner, more straightforward gameplay
+
+### 3. Code Changes
+**Files updated:**
+- `game_state.py`: Removed `exhaustion_tokens` tracking
+- `game_engine.py`: Removed `_get_slipstream_moves()` method and `uses_slipstream` from Move class
+- `agents.py`: Updated Conservative, Aggressive, and Adaptive agents
+- `simulator.py`: Removed slipstream from verbose logging
+
+### 4. Move Data Now Includes
+```json
+{
+  "rider": "P0R1",
+  "rider_type": "Sprinter",
+  "old_position": 2,
+  "new_position": 4,
+  "card_played": "Rouleur",
+  "play_mode": "Pull",
+  "points_earned": 0,
+  "checkpoints_reached": null,
+  "cards_drawn": 0
+}
+```
+*Note: No more `used_slipstream` or `exhaustion_tokens` fields*
+
+### 5. Agent Behavior Updated
+- **Conservative**: Now just plays normally (no slipstream avoidance needed)
+- **Aggressive**: Now just plays for maximum distance (no slipstream preference)
+- **Adaptive**: Removed exhaustion penalty from scoring
+
+### 6. Testing Results
+✅ All 11 agent types working
+✅ Games complete normally (18-80 turns)
+✅ Logs clean of slipstream/exhaustion references
+✅ Tournament system functional
+
+---
+
+## Previous Changes (Game Ending Conditions)
+
+### 1. Two Ways to End the Game
+The game ends when **either** condition is met:
+
+**Condition 1: Five Riders Finish**
+- When 5 riders (from any players) reach or pass the finish line
+- Most common ending condition
+- Ensures game doesn't drag on too long
+- Remaining riders still score based on their positions
+
+**Condition 2: All Players Out of Cards**
+- When all players have empty hands AND the deck is empty
+- Safety condition for edge cases
+- Prevents infinite loops
+- Very rare in normal play
+
+### 2. Game Over Detection
+- Checked after every move
+- `check_game_over()` evaluates both conditions
+- `get_game_over_reason()` reports which condition triggered
+- Game state tracks: `game_over` boolean
+
+### 3. Final Results Include
+- `game_over_reason`: Why the game ended
+  - `"5_riders_finished (X riders at finish)"`
+  - `"players_out_of_cards"`
+- `total_turns`: How many turns the game lasted
+- `riders_at_finish`: How many riders crossed the finish line
+- Final scores and winner
+
+### 4. Example Output
+```
+Game ended after 73 turns
+Reason: 5_riders_finished (5 riders at finish)
+Riders at finish: 5
+Winner: Greedy (Player 0)
+Winner score: 57
+Final hand sizes: [17, 18]
+Deck remaining: 46 cards
+```
+
+### 5. Strategic Implications
+- **5-rider limit**: Creates urgency - not all riders will finish
+- **Early finishers**: First 5 riders stop the race
+- **Positioning matters**: Players must decide which riders to push forward
+- **Card management**: Running completely out of cards is bad (but rare)
+
+### 6. Testing Results
+Sample games (3 players):
+- All 5 games ended with "5_riders_finished"
+- Average turns: 76
+- Final hands: 17-29 cards (players had plenty left)
+- Deck remaining: 11-17 cards
+- "Out of cards" ending is rare in normal play
+
+---
+
+## Previous Changes (Checkpoint-Based Card Drawing)
 
 ### 1. Card Drawing Mechanic Changed
 **Old system:** Draw 1 card after every turn

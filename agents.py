@@ -135,49 +135,35 @@ class SprintHunterAgent(Agent):
 
 
 class ConservativeAgent(Agent):
-    """Agent that avoids slipstreaming (exhaustion tokens)"""
+    """Agent that plays conservatively"""
     
     def __init__(self, player_id: int):
         super().__init__(player_id, "Conservative")
     
     def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
-        """Avoid slipstream moves"""
+        """Choose conservative moves"""
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
         
-        # Filter out slipstream moves
-        non_slipstream = [m for m in valid_moves if not m.uses_slipstream]
-        
-        if non_slipstream:
-            # Take best non-slipstream move
-            return max(non_slipstream, key=lambda m: m.target_position - m.rider.position)
-        else:
-            # If only slipstream moves available, take one
-            return max(valid_moves, key=lambda m: m.target_position - m.rider.position)
+        # Take best move (no special slipstream logic needed anymore)
+        return max(valid_moves, key=lambda m: m.target_position - m.rider.position)
 
 
 class AggressiveAgent(Agent):
-    """Agent that uses slipstreaming aggressively"""
+    """Agent that plays aggressively for maximum advancement"""
     
     def __init__(self, player_id: int):
         super().__init__(player_id, "Aggressive")
     
     def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
-        """Prefer slipstream moves for maximum advancement"""
+        """Prefer moves for maximum advancement"""
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
         
-        # Prioritize slipstream moves
-        slipstream_moves = [m for m in valid_moves if m.uses_slipstream]
-        
-        if slipstream_moves:
-            # Take the best slipstream move
-            return max(slipstream_moves, key=lambda m: m.target_position - m.rider.position)
-        else:
-            # Otherwise take best regular move
-            return max(valid_moves, key=lambda m: m.target_position - m.rider.position)
+        # Take the best move for maximum distance
+        return max(valid_moves, key=lambda m: m.target_position - m.rider.position)
 
 
 class CardTypeAgent(Agent):
@@ -255,10 +241,6 @@ class AdaptiveAgent(Agent):
             if climb_count == 0 and move.card.card_type == CardType.SPRINTER:
                 score += 20
         
-        # Slight penalty for slipstreaming (exhaustion)
-        if move.uses_slipstream:
-            exhaustion = engine.state.exhaustion_tokens.get(move.rider, 0)
-            score -= exhaustion * 5
         
         return score
 

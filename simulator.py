@@ -148,7 +148,7 @@ class GameSimulator:
                       f"Rider {move.rider.rider_id} "
                       f"moved to position {move.target_position} "
                       f"(card: {move.card.card_type.value}, "
-                      f"slipstream: {move.uses_slipstream})")
+                      f"mode: {move.play_mode.value})")
             
             # Check if game is over
             state.check_game_over()

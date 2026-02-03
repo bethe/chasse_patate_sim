@@ -268,11 +268,6 @@ class GameState:
         # Deal initial hands according to rules
         self._deal_initial_hands()
         
-        # Slipstream tracking
-        self.exhaustion_tokens: Dict[Rider, int] = {
-            rider: 0 for player in self.players for rider in player.riders
-        }
-        
         # Checkpoint tracking for card drawing (every 10 fields: 10, 20, 30, 40, ...)
         # Track which checkpoints each rider has reached
         self.checkpoints_reached: Dict[Rider, Set[int]] = {

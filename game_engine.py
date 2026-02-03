@@ -15,7 +15,6 @@ class Move:
     card: Card
     target_position: int
     play_mode: PlayMode  # Pull or Attack
-    uses_slipstream: bool = False
 
 
 class GameEngine:
@@ -62,48 +61,11 @@ class GameEngine:
         # Base movement for current terrain
         base_movement = card.get_movement(current_tile.terrain, play_mode)
         
-        # Try moves without slipstream
+        # Generate all possible moves from 1 to base_movement
         for distance in range(1, base_movement + 1):
             target_pos = current_pos + distance
             if self._is_valid_position(target_pos):
-                moves.append(Move(rider, card, target_pos, play_mode, uses_slipstream=False))
-        
-        # Try moves with slipstream (if applicable)
-        slipstream_moves = self._get_slipstream_moves(rider, card, play_mode, current_pos, base_movement)
-        moves.extend(slipstream_moves)
-        
-        return moves
-    
-    def _get_slipstream_moves(self, rider: Rider, card: Card, play_mode: PlayMode,
-                              current_pos: int, base_movement: int) -> List[Move]:
-        """Calculate possible slipstream moves"""
-        moves = []
-        
-        # Check if there are riders ahead to slipstream
-        riders_ahead = []
-        for pos in range(current_pos + 1, current_pos + base_movement + 6):
-            if pos >= self.state.track_length:
-                break
-            riders_at_pos = self.state.get_riders_at_position(pos)
-            if riders_at_pos:
-                riders_ahead.extend([(r, pos) for r in riders_at_pos if r != rider])
-        
-        if not riders_ahead:
-            return moves
-        
-        # Can slipstream up to 5 spaces beyond base movement
-        max_slipstream = base_movement + 5
-        
-        for distance in range(base_movement + 1, max_slipstream + 1):
-            target_pos = current_pos + distance
-            if not self._is_valid_position(target_pos):
-                break
-            
-            # Check if we would be slipstreaming (passing riders)
-            would_slipstream = any(pos < target_pos for _, pos in riders_ahead)
-            
-            if would_slipstream:
-                moves.append(Move(rider, card, target_pos, play_mode, uses_slipstream=True))
+                moves.append(Move(rider, card, target_pos, play_mode))
         
         return moves
     
@@ -128,10 +90,6 @@ class GameEngine:
         
         # Move the rider
         move.rider.position = move.target_position
-        
-        # Add exhaustion token if slipstreaming
-        if move.uses_slipstream:
-            self.state.exhaustion_tokens[move.rider] += 1
         
         # Remove card from hand and discard
         player.hand.remove(move.card)
@@ -168,9 +126,7 @@ class GameEngine:
             'new_position': move.target_position,
             'card_played': move.card.card_type.value,
             'play_mode': move.play_mode.value,
-            'used_slipstream': move.uses_slipstream,
             'points_earned': points_earned,
-            'exhaustion_tokens': self.state.exhaustion_tokens[move.rider],
             'checkpoints_reached': checkpoints_reached if checkpoints_reached else None,
             'cards_drawn': cards_drawn
         }
