@@ -76,10 +76,10 @@ class GameLogger:
 class GameSimulator:
     """Simulates multiple games for testing"""
     
-    def __init__(self, num_players: int = 2, track_length: int = 50,
+    def __init__(self, num_players: int = 2, tile_config: List[int] = None,
                  log_dir: str = "game_logs", verbose: bool = False):
         self.num_players = num_players
-        self.track_length = track_length
+        self.tile_config = tile_config  # None uses default config
         self.verbose = verbose
         self.logger = GameLogger(log_dir)
         
@@ -89,7 +89,7 @@ class GameSimulator:
         """Run a single game with specified agents"""
         
         # Initialize game
-        state = GameState(self.num_players, self.track_length)
+        state = GameState(self.num_players, self.tile_config)
         engine = GameEngine(state)
         
         # Assign agents to players

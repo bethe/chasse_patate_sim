@@ -14,7 +14,8 @@ def example_single_game():
     print("EXAMPLE 1: Single Game with Verbose Output")
     print("="*80)
     
-    simulator = GameSimulator(num_players=2, track_length=50, verbose=True)
+    # Use default tile configuration (Tile 1, Tile 5, Tile 4)
+    simulator = GameSimulator(num_players=2, verbose=True)
     
     # Run one game with a greedy agent vs balanced agent
     from agents import create_agent
@@ -33,7 +34,7 @@ def example_batch_simulation():
     print("EXAMPLE 2: Batch Simulation")
     print("="*80)
     
-    simulator = GameSimulator(num_players=3, track_length=50, verbose=False)
+    simulator = GameSimulator(num_players=3, verbose=False)
     
     # Run 50 games with 3 different agents
     results = simulator.run_batch_simulation(
@@ -54,7 +55,7 @@ def example_tournament():
     print("EXAMPLE 3: Round-Robin Tournament")
     print("="*80)
     
-    simulator = GameSimulator(num_players=2, track_length=50, verbose=False)
+    simulator = GameSimulator(num_players=2, verbose=False)
     
     # Test these agent types against each other
     agent_types = [
@@ -87,7 +88,7 @@ def example_full_analysis():
     print("="*80)
     
     # Run a large batch of games
-    simulator = GameSimulator(num_players=2, track_length=50, verbose=False)
+    simulator = GameSimulator(num_players=2, verbose=False)
     
     print("\nRunning 100 games for analysis...")
     results = simulator.run_batch_simulation(
@@ -119,7 +120,7 @@ def example_test_specific_matchup():
     print("EXAMPLE 5: Testing Specific Matchup")
     print("="*80)
     
-    simulator = GameSimulator(num_players=2, track_length=50, verbose=False)
+    simulator = GameSimulator(num_players=2, verbose=False)
     
     # Test if aggressive strategy dominates
     print("\nTesting: Aggressive vs Conservative (100 games)")

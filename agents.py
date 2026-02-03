@@ -236,23 +236,23 @@ class AdaptiveAgent(Agent):
         # Check terrain at destination
         tile = engine.state.get_tile_at_position(move.target_position)
         if tile:
-            # Bonus for landing on sprint
+            # Bonus for landing on sprint or finish
             if tile.terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
                 score += 50
             
             # Check upcoming terrain (next 5 tiles)
-            mountain_count = 0
+            climb_count = 0
             for offset in range(1, 6):
                 next_tile = engine.state.get_tile_at_position(move.target_position + offset)
-                if next_tile and next_tile.terrain == TerrainType.MOUNTAIN:
-                    mountain_count += 1
+                if next_tile and next_tile.terrain == TerrainType.CLIMB:
+                    climb_count += 1
             
-            # If mountains ahead and we have a grimpeur card, bonus
-            if mountain_count >= 2 and move.card.card_type == CardType.GRIMPEUR:
+            # If climbs ahead and we have a grimpeur card, bonus
+            if climb_count >= 2 and move.card.card_type == CardType.GRIMPEUR:
                 score += 20
             
             # If flat ahead and we have sprinteur, bonus
-            if mountain_count == 0 and move.card.card_type == CardType.SPRINTEUR:
+            if climb_count == 0 and move.card.card_type == CardType.SPRINTEUR:
                 score += 20
         
         # Slight penalty for slipstreaming (exhaustion)

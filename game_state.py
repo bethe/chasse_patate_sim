@@ -17,12 +17,13 @@ class CardType(Enum):
 
 
 class TerrainType(Enum):
-    """Types of terrain tiles"""
+    """Types of terrain"""
     FLAT = "Flat"
-    HILL = "Hill"
-    MOUNTAIN = "Mountain"
-    SPRINT = "Sprint"
-    FINISH = "Finish"
+    COBBLES = "Cobbles"
+    CLIMB = "Climb"
+    DESCENT = "Descent"
+    SPRINT = "Sprint"  # Special marker for sprint points
+    FINISH = "Finish"  # Special marker for finish line
 
 
 @dataclass
@@ -30,17 +31,23 @@ class Card:
     """Represents a rider card"""
     card_type: CardType
     movement_flat: int
-    movement_hill: int
-    movement_mountain: int
+    movement_cobbles: int
+    movement_climb: int
+    movement_descent: int
     
     def get_movement(self, terrain: TerrainType) -> int:
         """Get movement value for terrain"""
-        if terrain in [TerrainType.FLAT, TerrainType.SPRINT]:
+        if terrain == TerrainType.FLAT:
             return self.movement_flat
-        elif terrain == TerrainType.HILL:
-            return self.movement_hill
-        elif terrain == TerrainType.MOUNTAIN:
-            return self.movement_mountain
+        elif terrain == TerrainType.COBBLES:
+            return self.movement_cobbles
+        elif terrain == TerrainType.CLIMB:
+            return self.movement_climb
+        elif terrain == TerrainType.DESCENT:
+            return self.movement_descent
+        elif terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
+            # Use flat movement for special tiles
+            return self.movement_flat
         return 0
 
 
@@ -58,6 +65,58 @@ class Rider:
         if isinstance(other, Rider):
             return self.player_id == other.player_id and self.rider_id == other.rider_id
         return False
+
+
+@dataclass
+class RaceTile:
+    """Represents one of the 5 race track tiles (20 fields each)"""
+    tile_id: int
+    nickname: str
+    terrain_map: List[TerrainType]  # 20 terrain types for fields 0-19
+    
+    def __post_init__(self):
+        assert len(self.terrain_map) == 20, f"Tile must have exactly 20 fields, got {len(self.terrain_map)}"
+
+
+# The 5 race tiles as defined in the game
+RACE_TILES = {
+    1: RaceTile(
+        tile_id=1,
+        nickname="Flat",
+        terrain_map=[TerrainType.FLAT] * 20
+    ),
+    2: RaceTile(
+        tile_id=2,
+        nickname="Mountaintop Finish",
+        terrain_map=[TerrainType.FLAT] * 3 + [TerrainType.CLIMB] * 17
+    ),
+    3: RaceTile(
+        tile_id=3,
+        nickname="Champs Elysees",
+        terrain_map=[TerrainType.FLAT] * 8 + [TerrainType.COBBLES] * 12
+    ),
+    4: RaceTile(
+        tile_id=4,
+        nickname="Up and Down",
+        terrain_map=[TerrainType.FLAT] * 2 + [TerrainType.CLIMB] * 12 + [TerrainType.DESCENT] * 6
+    ),
+    5: RaceTile(
+        tile_id=5,
+        nickname="Paris-Roubaix",
+        # Fields 1-2: Flat, 3-7: Cobbles, 8: Flat (field 8 is missing in spec, assuming Flat)
+        # 9-13: Flat, 14-18: Cobbles, 19-20: Flat
+        terrain_map=(
+            [TerrainType.FLAT] * 2 +      # Fields 1-2
+            [TerrainType.COBBLES] * 5 +   # Fields 3-7
+            [TerrainType.FLAT] * 6 +      # Fields 8-13
+            [TerrainType.COBBLES] * 5 +   # Fields 14-18
+            [TerrainType.FLAT] * 2        # Fields 19-20
+        )
+    )
+}
+
+# Default race configuration: Tile 1, Tile 5, Tile 4
+DEFAULT_RACE_CONFIG = [1, 5, 4]
 
 
 @dataclass
@@ -90,17 +149,26 @@ class GameState:
     """Main game state"""
     
     # Card distributions per rulebook
+    # Format: (flat, cobbles, climb, descent)
+    # TODO: Update these values based on actual card specifications
     CARD_DISTRIBUTION = {
-        CardType.ROULEUR: [(7, 5, 3)] * 9,  # 9 cards: 7 flat, 5 hill, 3 mountain
-        CardType.SPRINTEUR: [(9, 3, 3)] * 9,  # 9 cards: 9 flat, 3 hill, 3 mountain
-        CardType.GRIMPEUR: [(5, 7, 9)] * 9,  # 9 cards: 5 flat, 7 hill, 9 mountain
+        CardType.ROULEUR: [(7, 5, 3, 5)] * 9,      # Placeholder values
+        CardType.SPRINTEUR: [(9, 6, 3, 6)] * 9,    # Placeholder values
+        CardType.GRIMPEUR: [(5, 4, 9, 7)] * 9,     # Placeholder values
     }
     
-    def __init__(self, num_players: int, track_length: int = 50):
+    def __init__(self, num_players: int, tile_config: List[int] = None):
         assert 2 <= num_players <= 5, "Game supports 2-5 players"
         
         self.num_players = num_players
-        self.track_length = track_length
+        
+        # Use default tile configuration if none provided
+        if tile_config is None:
+            tile_config = DEFAULT_RACE_CONFIG
+        
+        self.tile_config = tile_config
+        self.track_length = len(tile_config) * 20  # Each tile is 20 fields
+        
         self.current_turn = 0
         self.current_player_idx = 0
         self.game_over = False
@@ -112,8 +180,8 @@ class GameState:
         self.deck = self._create_deck()
         self.discard_pile: List[Card] = []
         
-        # Create track
-        self.track = self._create_track()
+        # Create track from tiles
+        self.track = self._create_track_from_tiles(tile_config)
         
         # Deal initial hands (5 cards each)
         for player in self.players:
@@ -128,44 +196,30 @@ class GameState:
         """Create and shuffle the deck"""
         deck = []
         for card_type, configs in self.CARD_DISTRIBUTION.items():
-            for flat, hill, mountain in configs:
-                deck.append(Card(card_type, flat, hill, mountain))
+            for flat, cobbles, climb, descent in configs:
+                deck.append(Card(card_type, flat, cobbles, climb, descent))
         random.shuffle(deck)
         return deck
     
-    def _create_track(self) -> List[TrackTile]:
-        """Create the race track"""
+    def _create_track_from_tiles(self, tile_config: List[int]) -> List[TrackTile]:
+        """Create the race track from tile configuration"""
         track = []
+        position = 0
         
-        # Example track configuration (can be customized)
-        # First 20% flat, then mixed terrain with sprints
-        positions_per_section = self.track_length // 5
+        for tile_id in tile_config:
+            if tile_id not in RACE_TILES:
+                raise ValueError(f"Invalid tile_id: {tile_id}. Must be 1-5.")
+            
+            race_tile = RACE_TILES[tile_id]
+            
+            # Add all 20 fields from this tile
+            for field_idx, terrain in enumerate(race_tile.terrain_map):
+                track.append(TrackTile(position, terrain))
+                position += 1
         
-        # Flat start
-        for i in range(positions_per_section):
-            track.append(TrackTile(i, TerrainType.FLAT))
-        
-        # First sprint
-        track.append(TrackTile(positions_per_section, TerrainType.SPRINT))
-        
-        # Hills
-        for i in range(positions_per_section + 1, 2 * positions_per_section):
-            track.append(TrackTile(i, TerrainType.HILL))
-        
-        # Mountain section
-        for i in range(2 * positions_per_section, 3 * positions_per_section):
-            track.append(TrackTile(i, TerrainType.MOUNTAIN))
-        
-        # Second sprint
-        track.append(TrackTile(3 * positions_per_section, TerrainType.SPRINT))
-        
-        # Final section with mixed terrain
-        for i in range(3 * positions_per_section + 1, self.track_length - 1):
-            terrain = random.choice([TerrainType.FLAT, TerrainType.HILL])
-            track.append(TrackTile(i, terrain))
-        
-        # Finish line
-        track.append(TrackTile(self.track_length - 1, TerrainType.FINISH, [15, 10, 7, 5, 3]))
+        # Mark the last position as finish
+        track[-1].terrain = TerrainType.FINISH
+        track[-1].sprint_points = [15, 10, 7, 5, 3]  # Finish line points
         
         return track
     

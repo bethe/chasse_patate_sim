@@ -18,7 +18,7 @@ def quick_balance_test():
     
     # Test 2-player games
     print("Testing 2-player games...")
-    simulator = GameSimulator(num_players=2, track_length=40, verbose=False)
+    simulator = GameSimulator(num_players=2, verbose=False)
     
     # Test most common strategies
     test_agents = ['random', 'greedy', 'balanced', 'aggressive', 'adaptive']
