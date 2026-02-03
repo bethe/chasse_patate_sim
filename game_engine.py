@@ -45,7 +45,9 @@ class GameEngine:
             attack_moves = self._get_attack_moves(rider, player)
             valid_moves.extend(attack_moves)
             
-            # TODO: DRAFT actions (placeholder)
+            # DRAFT actions (follow another rider's Pull move)
+            draft_moves = self._get_draft_moves(rider, player)
+            valid_moves.extend(draft_moves)
         
         # TEAM CAR action (available once per turn, not per rider)
         # Player draws 2 cards, then discards 1 card of their choice
@@ -107,6 +109,40 @@ class GameEngine:
         
         return moves
     
+    def _get_draft_moves(self, rider: Rider, player: Player) -> List[Move]:
+        """Generate draft moves for a rider
+        
+        A rider can draft if:
+        1. The last move was a PULL action
+        2. The last move was by a different player
+        3. The rider's current position matches the old_position of the last Pull move
+        """
+        moves = []
+        
+        # Check if there was a previous move
+        if not self.state.last_move:
+            return moves
+        
+        # Check if last move was a Pull action
+        if self.state.last_move.get('action') != 'Pull':
+            return moves
+        
+        # Check if last move was by a different player
+        last_rider_str = self.state.last_move.get('rider', '')  # e.g., "P0R1"
+        if last_rider_str.startswith(f'P{player.player_id}'):
+            return moves  # Can't draft from your own rider
+        
+        # Check if rider's current position matches the starting position of the last Pull
+        last_old_position = self.state.last_move.get('old_position', -1)
+        if rider.position != last_old_position:
+            return moves
+        
+        # Rider is eligible to draft!
+        # Store the movement distance in a special way (we'll retrieve it in execute_move)
+        moves.append(Move(ActionType.DRAFT, rider, []))
+        
+        return moves
+    
     def _is_valid_position(self, position: int) -> bool:
         """Check if a position is valid on the track"""
         return 0 <= position < self.state.track_length
@@ -133,11 +169,17 @@ class GameEngine:
             total_movement = self._calculate_attack_movement(move.rider, move.cards)
             action_name = "Attack"
         elif move.action_type == ActionType.DRAFT:
-            # Placeholder
-            return {'success': False, 'error': 'Draft action not yet implemented'}
+            # Draft: copy the movement from the last Pull move
+            if not self.state.last_move or self.state.last_move.get('action') != 'Pull':
+                return {'success': False, 'error': 'Cannot draft - no valid Pull move to follow'}
+            total_movement = self.state.last_move.get('movement', 0)
+            action_name = "Draft"
         elif move.action_type == ActionType.TEAM_CAR:
             # Team Car: Draw 2 cards, discard 1 card
-            return self._execute_team_car(move, player, old_position, old_terrain)
+            result = self._execute_team_car(move, player, old_position, old_terrain)
+            # Update last_move tracking
+            self.state.last_move = result
+            return result
         else:
             return {'success': False, 'error': f'Unknown action type: {move.action_type}'}
         
@@ -181,7 +223,7 @@ class GameEngine:
                         player.hand.append(new_card)
                         cards_drawn += 1
         
-        return {
+        result = {
             'success': True,
             'action': action_name,
             'rider': f"P{move.rider.player_id}R{move.rider.rider_id}",
@@ -197,6 +239,11 @@ class GameEngine:
             'checkpoints_reached': checkpoints_reached if checkpoints_reached else None,
             'cards_drawn': cards_drawn
         }
+        
+        # Store this move for potential drafting
+        self.state.last_move = result
+        
+        return result
     
     def _calculate_pull_movement(self, rider: Rider, cards: List[Card]) -> int:
         """Calculate total movement for a Pull action"""

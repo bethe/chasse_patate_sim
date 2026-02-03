@@ -285,6 +285,10 @@ class GameState:
         # Sprint arrival tracking: track order of arrival at each sprint point
         # Key = position, Value = list of riders in arrival order
         self.sprint_arrivals: Dict[int, List[Rider]] = {}
+        
+        # Track last move for drafting eligibility
+        # Stores the most recent move result from execute_move()
+        self.last_move: Optional[Dict] = None
     
     def _deal_initial_hands(self):
         """Deal initial hands according to game rules:
