@@ -403,27 +403,35 @@ class GameState:
         1. Five riders have reached the finish line
         2. All players have run out of cards (and deck is empty)
         """
-        # Condition 1: Check if 5 riders have finished
-        finish_position = self.track_length - 1
-        riders_finished = 0
-        
-        for player in self.players:
-            for rider in player.riders:
-                if rider.position >= finish_position:
-                    riders_finished += 1
-        
-        if riders_finished >= 5:
-            self.game_over = True
-            return True
-        
-        # Condition 2: Check if all players are out of cards and deck is empty
-        if len(self.deck) == 0:
-            all_players_empty = all(len(player.hand) == 0 for player in self.players)
-            if all_players_empty:
+        try:
+            # Condition 1: Check if 5 riders have finished
+            finish_position = int(self.track_length - 1)
+            riders_finished = 0
+            
+            for player in self.players:
+                for rider in player.riders:
+                    # Ensure position is an integer and valid
+                    rider_pos = int(rider.position) if rider.position is not None else 0
+                    if rider_pos >= finish_position:
+                        riders_finished += 1
+            
+            if riders_finished >= 5:
                 self.game_over = True
                 return True
-        
-        return False
+            
+            # Condition 2: Check if all players are out of cards and deck is empty
+            if len(self.deck) == 0:
+                all_players_empty = all(len(player.hand) == 0 for player in self.players)
+                if all_players_empty:
+                    self.game_over = True
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            # If there's any error, log it but don't crash
+            print(f"Warning: Error in check_game_over: {e}")
+            return False
     
     def get_game_over_reason(self) -> Optional[str]:
         """Get the reason why the game ended"""

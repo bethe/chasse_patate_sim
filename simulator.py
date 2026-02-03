@@ -124,13 +124,15 @@ class GameSimulator:
                 if len(current_player.hand) == 0:
                     if self.verbose:
                         print(f"  {agent} has no cards left!")
-                    # Check if game should end (all players out of cards)
-                    if state.check_game_over():
-                        if self.verbose:
-                            print(f"  Game ending: {state.get_game_over_reason()}")
-                        break
+                
+                # Always check if game should end
+                if state.check_game_over():
+                    if self.verbose:
+                        print(f"  Game ending: {state.get_game_over_reason()}")
+                    break
                 
                 state.advance_turn()
+                turn_count += 1
                 continue
             
             # Execute move
@@ -154,6 +156,10 @@ class GameSimulator:
             # Next turn
             state.advance_turn()
             turn_count += 1
+        
+        # Final check of game over state (in case we hit max_turns)
+        if not state.game_over:
+            state.check_game_over()
         
         # Calculate final results
         final_result = engine.process_end_of_race()
