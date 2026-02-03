@@ -196,41 +196,42 @@ class GameState:
     """Main game state"""
     
     # Card distributions per rulebook
+    # 18 of each rider card + 36 Energy cards = 90 total cards
     CARD_DISTRIBUTION = {
-        # Energy cards (value always 1, regardless of terrain/mode)
+        # Energy cards: 36 total
         CardType.ENERGY: [
-            Card(CardType.ENERGY)  # Energy cards don't need terrain values
-            for _ in range(9)  # TODO: Confirm number of Energy cards in deck
+            Card(CardType.ENERGY)
+            for _ in range(36)
         ],
         
-        # Rouleur cards
+        # Rouleur cards: 18 total
         CardType.ROULEUR: [
             Card(
                 CardType.ROULEUR,
                 pull_flat=2, pull_cobbles=1, pull_climb=1, pull_descent=3,
                 attack_flat=2, attack_cobbles=1, attack_climb=1, attack_descent=3
             )
-            for _ in range(9)  # TODO: Confirm number of each card type
+            for _ in range(18)
         ],
         
-        # Sprinter cards
+        # Sprinter cards: 18 total
         CardType.SPRINTER: [
             Card(
                 CardType.SPRINTER,
                 pull_flat=1, pull_cobbles=1, pull_climb=0, pull_descent=3,
                 attack_flat=3, attack_cobbles=2, attack_climb=1, attack_descent=3
             )
-            for _ in range(9)
+            for _ in range(18)
         ],
         
-        # Climber cards
+        # Climber cards: 18 total
         CardType.CLIMBER: [
             Card(
                 CardType.CLIMBER,
                 pull_flat=0, pull_cobbles=0, pull_climb=2, pull_descent=3,
                 attack_flat=1, attack_cobbles=0, attack_climb=3, attack_descent=3
             )
-            for _ in range(9)
+            for _ in range(18)
         ],
     }
     
@@ -260,14 +261,57 @@ class GameState:
         # Create track from tiles
         self.track = self._create_track_from_tiles(tile_config)
         
-        # Deal initial hands (5 cards each)
-        for player in self.players:
-            player.hand = [self.deck.pop() for _ in range(5)]
+        # Deal initial hands according to rules
+        self._deal_initial_hands()
         
         # Slipstream tracking
         self.exhaustion_tokens: Dict[Rider, int] = {
             rider: 0 for player in self.players for rider in player.riders
         }
+    
+    def _deal_initial_hands(self):
+        """Deal initial hands according to game rules:
+        - 3 Energy cards
+        - 1 Rouleur, 1 Sprinter, 1 Climber card
+        - 3 random cards from remaining deck
+        Total: 9 cards per player"""
+        
+        # First, separate the deck by card type for easier dealing
+        energy_cards = [c for c in self.deck if c.card_type == CardType.ENERGY]
+        rouleur_cards = [c for c in self.deck if c.card_type == CardType.ROULEUR]
+        sprinter_cards = [c for c in self.deck if c.card_type == CardType.SPRINTER]
+        climber_cards = [c for c in self.deck if c.card_type == CardType.CLIMBER]
+        
+        # Clear deck, we'll rebuild it after dealing
+        self.deck = []
+        
+        for player in self.players:
+            hand = []
+            
+            # Deal 3 Energy cards
+            for _ in range(3):
+                if energy_cards:
+                    hand.append(energy_cards.pop(0))
+            
+            # Deal exactly 1 of each rider card type
+            if rouleur_cards:
+                hand.append(rouleur_cards.pop(0))
+            if sprinter_cards:
+                hand.append(sprinter_cards.pop(0))
+            if climber_cards:
+                hand.append(climber_cards.pop(0))
+            
+            player.hand = hand
+        
+        # Rebuild deck with remaining cards
+        self.deck = energy_cards + rouleur_cards + sprinter_cards + climber_cards
+        random.shuffle(self.deck)
+        
+        # Now deal 3 random cards to each player from the shuffled remaining deck
+        for player in self.players:
+            for _ in range(3):
+                if self.deck:
+                    player.hand.append(self.deck.pop(0))
     
     def _create_deck(self) -> List[Card]:
         """Create and shuffle the deck"""
@@ -360,9 +404,34 @@ class GameState:
             'current_player': self.current_player_idx,
             'player_scores': [p.points for p in self.players],
             'player_hand_sizes': [len(p.hand) for p in self.players],
+            'player_hands_detailed': [self._get_hand_breakdown(p) for p in self.players],
             'rider_positions': {
                 f"P{r.player_id}R{r.rider_id}": r.position 
                 for player in self.players for r in player.riders
             },
-            'game_over': self.game_over
+            'game_over': self.game_over,
+            'deck_size': len(self.deck),
+            'discard_size': len(self.discard_pile)
         }
+    
+    def _get_hand_breakdown(self, player: Player) -> Dict:
+        """Get detailed breakdown of a player's hand"""
+        breakdown = {
+            'energy': 0,
+            'rouleur': 0,
+            'sprinter': 0,
+            'climber': 0,
+            'total': len(player.hand)
+        }
+        
+        for card in player.hand:
+            if card.card_type == CardType.ENERGY:
+                breakdown['energy'] += 1
+            elif card.card_type == CardType.ROULEUR:
+                breakdown['rouleur'] += 1
+            elif card.card_type == CardType.SPRINTER:
+                breakdown['sprinter'] += 1
+            elif card.card_type == CardType.CLIMBER:
+                breakdown['climber'] += 1
+        
+        return breakdown
