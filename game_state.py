@@ -10,10 +10,17 @@ import random
 
 
 class CardType(Enum):
-    """Types of rider cards"""
+    """Types of cards"""
+    ENERGY = "Energy"
     ROULEUR = "Rouleur"
-    SPRINTEUR = "Sprinteur"
-    GRIMPEUR = "Grimpeur"
+    SPRINTER = "Sprinter"
+    CLIMBER = "Climber"
+
+
+class PlayMode(Enum):
+    """Card play modes"""
+    PULL = "Pull"
+    ATTACK = "Attack"
 
 
 class TerrainType(Enum):
@@ -28,27 +35,59 @@ class TerrainType(Enum):
 
 @dataclass
 class Card:
-    """Represents a rider card"""
+    """Represents a card that can be played"""
     card_type: CardType
-    movement_flat: int
-    movement_cobbles: int
-    movement_climb: int
-    movement_descent: int
     
-    def get_movement(self, terrain: TerrainType) -> int:
-        """Get movement value for terrain"""
-        if terrain == TerrainType.FLAT:
-            return self.movement_flat
-        elif terrain == TerrainType.COBBLES:
-            return self.movement_cobbles
-        elif terrain == TerrainType.CLIMB:
-            return self.movement_climb
-        elif terrain == TerrainType.DESCENT:
-            return self.movement_descent
-        elif terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
-            # Use flat movement for special tiles
-            return self.movement_flat
-        return 0
+    # Movement values for pull mode (None for Energy card)
+    pull_flat: Optional[int] = None
+    pull_cobbles: Optional[int] = None
+    pull_climb: Optional[int] = None
+    pull_descent: Optional[int] = None
+    
+    # Movement values for attack mode (None for Energy card)
+    attack_flat: Optional[int] = None
+    attack_cobbles: Optional[int] = None
+    attack_climb: Optional[int] = None
+    attack_descent: Optional[int] = None
+    
+    def is_energy_card(self) -> bool:
+        """Check if this is an Energy card"""
+        return self.card_type == CardType.ENERGY
+    
+    def can_play_on_rider(self, rider_type: CardType) -> bool:
+        """Check if this card can be played on a specific rider type"""
+        if self.is_energy_card():
+            return True  # Energy can be played on any rider
+        return self.card_type == rider_type  # Rider cards match rider type
+    
+    def get_movement(self, terrain: TerrainType, play_mode: PlayMode) -> int:
+        """Get movement value for terrain and play mode"""
+        # Energy card always returns 1
+        if self.is_energy_card():
+            return 1
+        
+        # Select the appropriate mode
+        if play_mode == PlayMode.PULL:
+            terrain_map = {
+                TerrainType.FLAT: self.pull_flat,
+                TerrainType.COBBLES: self.pull_cobbles,
+                TerrainType.CLIMB: self.pull_climb,
+                TerrainType.DESCENT: self.pull_descent,
+            }
+        else:  # PlayMode.ATTACK
+            terrain_map = {
+                TerrainType.FLAT: self.attack_flat,
+                TerrainType.COBBLES: self.attack_cobbles,
+                TerrainType.CLIMB: self.attack_climb,
+                TerrainType.DESCENT: self.attack_descent,
+            }
+        
+        # Handle special terrain types (Sprint/Finish use flat values)
+        if terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
+            terrain = TerrainType.FLAT
+        
+        movement = terrain_map.get(terrain, 0)
+        return movement if movement is not None else 0
 
 
 @dataclass
@@ -56,7 +95,15 @@ class Rider:
     """Represents a rider on the track"""
     player_id: int
     rider_id: int  # 0-2 for each player's three riders
+    rider_type: CardType = CardType.ROULEUR  # Type of rider (set in __post_init__)
     position: int = 0  # Track position
+    
+    def __post_init__(self):
+        # Assign rider types: 0=Rouleur, 1=Sprinter, 2=Climber
+        rider_types = [CardType.ROULEUR, CardType.SPRINTER, CardType.CLIMBER]
+        if hasattr(self, 'rider_type') and self.rider_type == CardType.ROULEUR:
+            # Only set if not already set (default value)
+            self.rider_type = rider_types[self.rider_id]
     
     def __hash__(self):
         return hash((self.player_id, self.rider_id))
@@ -149,12 +196,42 @@ class GameState:
     """Main game state"""
     
     # Card distributions per rulebook
-    # Format: (flat, cobbles, climb, descent)
-    # TODO: Update these values based on actual card specifications
     CARD_DISTRIBUTION = {
-        CardType.ROULEUR: [(7, 5, 3, 5)] * 9,      # Placeholder values
-        CardType.SPRINTEUR: [(9, 6, 3, 6)] * 9,    # Placeholder values
-        CardType.GRIMPEUR: [(5, 4, 9, 7)] * 9,     # Placeholder values
+        # Energy cards (value always 1, regardless of terrain/mode)
+        CardType.ENERGY: [
+            Card(CardType.ENERGY)  # Energy cards don't need terrain values
+            for _ in range(9)  # TODO: Confirm number of Energy cards in deck
+        ],
+        
+        # Rouleur cards
+        CardType.ROULEUR: [
+            Card(
+                CardType.ROULEUR,
+                pull_flat=2, pull_cobbles=1, pull_climb=1, pull_descent=3,
+                attack_flat=2, attack_cobbles=1, attack_climb=1, attack_descent=3
+            )
+            for _ in range(9)  # TODO: Confirm number of each card type
+        ],
+        
+        # Sprinter cards
+        CardType.SPRINTER: [
+            Card(
+                CardType.SPRINTER,
+                pull_flat=1, pull_cobbles=1, pull_climb=0, pull_descent=3,
+                attack_flat=3, attack_cobbles=2, attack_climb=1, attack_descent=3
+            )
+            for _ in range(9)
+        ],
+        
+        # Climber cards
+        CardType.CLIMBER: [
+            Card(
+                CardType.CLIMBER,
+                pull_flat=0, pull_cobbles=0, pull_climb=2, pull_descent=3,
+                attack_flat=1, attack_cobbles=0, attack_climb=3, attack_descent=3
+            )
+            for _ in range(9)
+        ],
     }
     
     def __init__(self, num_players: int, tile_config: List[int] = None):
@@ -195,9 +272,8 @@ class GameState:
     def _create_deck(self) -> List[Card]:
         """Create and shuffle the deck"""
         deck = []
-        for card_type, configs in self.CARD_DISTRIBUTION.items():
-            for flat, cobbles, climb, descent in configs:
-                deck.append(Card(card_type, flat, cobbles, climb, descent))
+        for card_type, cards in self.CARD_DISTRIBUTION.items():
+            deck.extend(cards)
         random.shuffle(deck)
         return deck
     

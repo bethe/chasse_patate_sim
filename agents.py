@@ -6,7 +6,7 @@ Different AI strategies for testing game balance
 from abc import ABC, abstractmethod
 from typing import List, Optional
 import random
-from game_state import Player, Card, CardType, TerrainType
+from game_state import Player, Card, CardType, TerrainType, PlayMode
 from game_engine import GameEngine, Move
 
 
@@ -247,12 +247,12 @@ class AdaptiveAgent(Agent):
                 if next_tile and next_tile.terrain == TerrainType.CLIMB:
                     climb_count += 1
             
-            # If climbs ahead and we have a grimpeur card, bonus
-            if climb_count >= 2 and move.card.card_type == CardType.GRIMPEUR:
+            # If climbs ahead and we have a climber card, bonus
+            if climb_count >= 2 and move.card.card_type == CardType.CLIMBER:
                 score += 20
             
-            # If flat ahead and we have sprinteur, bonus
-            if climb_count == 0 and move.card.card_type == CardType.SPRINTEUR:
+            # If flat ahead and we have sprinter, bonus
+            if climb_count == 0 and move.card.card_type == CardType.SPRINTER:
                 score += 20
         
         # Slight penalty for slipstreaming (exhaustion)
@@ -276,8 +276,8 @@ def create_agent(agent_type: str, player_id: int) -> Agent:
         'aggressive': AggressiveAgent,
         'adaptive': AdaptiveAgent,
         'rouleur_focus': lambda pid: CardTypeAgent(pid, CardType.ROULEUR),
-        'sprinteur_focus': lambda pid: CardTypeAgent(pid, CardType.SPRINTEUR),
-        'grimpeur_focus': lambda pid: CardTypeAgent(pid, CardType.GRIMPEUR),
+        'sprinter_focus': lambda pid: CardTypeAgent(pid, CardType.SPRINTER),
+        'climber_focus': lambda pid: CardTypeAgent(pid, CardType.CLIMBER),
     }
     
     if agent_type not in agent_map:
@@ -291,5 +291,5 @@ def get_available_agents() -> List[str]:
     return [
         'random', 'greedy', 'lead_rider', 'balanced', 
         'sprint_hunter', 'conservative', 'aggressive', 'adaptive',
-        'rouleur_focus', 'sprinteur_focus', 'grimpeur_focus'
+        'rouleur_focus', 'sprinter_focus', 'climber_focus'
     ]

@@ -5,7 +5,7 @@ Handles game logic, move validation, and rule enforcement
 
 from typing import List, Tuple, Optional, Set
 from dataclasses import dataclass
-from game_state import GameState, Player, Rider, Card, TerrainType, CardType
+from game_state import GameState, Player, Rider, Card, TerrainType, CardType, PlayMode
 
 
 @dataclass
@@ -14,6 +14,7 @@ class Move:
     rider: Rider
     card: Card
     target_position: int
+    play_mode: PlayMode  # Pull or Attack
     uses_slipstream: bool = False
 
 
@@ -29,13 +30,27 @@ class GameEngine:
         
         for rider in player.riders:
             for card in player.hand:
+                # Check if card can be played on this rider
+                if not card.can_play_on_rider(rider.rider_type):
+                    continue
+                
                 # Get possible moves with this card
-                moves = self._get_moves_for_rider_card(rider, card)
-                valid_moves.extend(moves)
+                # Try both Pull and Attack modes (except for Energy which is always the same)
+                if card.is_energy_card():
+                    moves = self._get_moves_for_rider_card(rider, card, PlayMode.PULL)
+                    valid_moves.extend(moves)
+                else:
+                    # Try Pull mode
+                    moves_pull = self._get_moves_for_rider_card(rider, card, PlayMode.PULL)
+                    valid_moves.extend(moves_pull)
+                    
+                    # Try Attack mode
+                    moves_attack = self._get_moves_for_rider_card(rider, card, PlayMode.ATTACK)
+                    valid_moves.extend(moves_attack)
         
         return valid_moves
     
-    def _get_moves_for_rider_card(self, rider: Rider, card: Card) -> List[Move]:
+    def _get_moves_for_rider_card(self, rider: Rider, card: Card, play_mode: PlayMode) -> List[Move]:
         """Get all valid moves for a specific rider-card combination"""
         moves = []
         current_pos = rider.position
@@ -45,21 +60,21 @@ class GameEngine:
             return moves
         
         # Base movement for current terrain
-        base_movement = card.get_movement(current_tile.terrain)
+        base_movement = card.get_movement(current_tile.terrain, play_mode)
         
         # Try moves without slipstream
         for distance in range(1, base_movement + 1):
             target_pos = current_pos + distance
             if self._is_valid_position(target_pos):
-                moves.append(Move(rider, card, target_pos, uses_slipstream=False))
+                moves.append(Move(rider, card, target_pos, play_mode, uses_slipstream=False))
         
         # Try moves with slipstream (if applicable)
-        slipstream_moves = self._get_slipstream_moves(rider, card, current_pos, base_movement)
+        slipstream_moves = self._get_slipstream_moves(rider, card, play_mode, current_pos, base_movement)
         moves.extend(slipstream_moves)
         
         return moves
     
-    def _get_slipstream_moves(self, rider: Rider, card: Card, 
+    def _get_slipstream_moves(self, rider: Rider, card: Card, play_mode: PlayMode,
                               current_pos: int, base_movement: int) -> List[Move]:
         """Calculate possible slipstream moves"""
         moves = []
@@ -88,7 +103,7 @@ class GameEngine:
             would_slipstream = any(pos < target_pos for _, pos in riders_ahead)
             
             if would_slipstream:
-                moves.append(Move(rider, card, target_pos, uses_slipstream=True))
+                moves.append(Move(rider, card, target_pos, play_mode, uses_slipstream=True))
         
         return moves
     
@@ -103,6 +118,10 @@ class GameEngine:
         # Validate move
         if move.card not in player.hand:
             return {'success': False, 'error': 'Card not in hand'}
+        
+        # Validate card can be played on this rider
+        if not move.card.can_play_on_rider(move.rider.rider_type):
+            return {'success': False, 'error': 'Card cannot be played on this rider type'}
         
         # Store old position
         old_position = move.rider.position
@@ -131,9 +150,11 @@ class GameEngine:
         return {
             'success': True,
             'rider': f"P{move.rider.player_id}R{move.rider.rider_id}",
+            'rider_type': move.rider.rider_type.value,
             'old_position': old_position,
             'new_position': move.target_position,
             'card_played': move.card.card_type.value,
+            'play_mode': move.play_mode.value,
             'used_slipstream': move.uses_slipstream,
             'points_earned': points_earned,
             'exhaustion_tokens': self.state.exhaustion_tokens[move.rider]
@@ -199,17 +220,32 @@ class GameEngine:
         """Get game state information for an agent"""
         player = self.state.players[player_id]
         
+        def card_to_dict(c: Card) -> dict:
+            if c.is_energy_card():
+                return {'type': 'Energy', 'movement': 1}
+            return {
+                'type': c.card_type.value,
+                'pull': {
+                    'flat': c.pull_flat, 'cobbles': c.pull_cobbles,
+                    'climb': c.pull_climb, 'descent': c.pull_descent
+                },
+                'attack': {
+                    'flat': c.attack_flat, 'cobbles': c.attack_cobbles,
+                    'climb': c.attack_climb, 'descent': c.attack_descent
+                }
+            }
+        
         return {
             'player_id': player_id,
-            'hand': [{'type': c.card_type.value, 
-                     'flat': c.movement_flat,
-                     'hill': c.movement_hill, 
-                     'mountain': c.movement_mountain} for c in player.hand],
-            'my_riders': [{'rider_id': r.rider_id, 'position': r.position} 
+            'hand': [card_to_dict(c) for c in player.hand],
+            'my_riders': [{'rider_id': r.rider_id, 
+                          'rider_type': r.rider_type.value,
+                          'position': r.position} 
                          for r in player.riders],
             'my_score': player.points,
             'opponent_riders': [{'player_id': r.player_id, 
-                                'rider_id': r.rider_id, 
+                                'rider_id': r.rider_id,
+                                'rider_type': r.rider_type.value,
                                 'position': r.position}
                                for p in self.state.players if p.player_id != player_id
                                for r in p.riders],
