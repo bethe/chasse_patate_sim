@@ -100,15 +100,24 @@ class GameAnalyzer:
         """Analyze which card types are used most"""
         
         card_usage = defaultdict(int)
+        action_usage = defaultdict(int)
         total_moves = 0
         
         for log in logs:
             for turn in log['move_history']:
                 if turn['move']['success']:
-                    card_type = turn['move']['card_played']
-                    card_usage[card_type] += 1
+                    # Count actions
+                    action = turn['move'].get('action', 'unknown')
+                    action_usage[action] += 1
+                    
+                    # Count cards (new system uses 'cards_played' list)
+                    cards_played = turn['move'].get('cards_played', [])
+                    for card in cards_played:
+                        card_usage[card] += 1
+                    
                     total_moves += 1
         
+        # Build results dataframe
         results = []
         for card_type, count in card_usage.items():
             results.append({
@@ -117,42 +126,12 @@ class GameAnalyzer:
                 'usage_rate': count / total_moves if total_moves > 0 else 0
             })
         
+        # If no cards found (old logs), return empty dataframe
+        if not results:
+            return pd.DataFrame(columns=['card_type', 'times_played', 'usage_rate'])
+        
         return pd.DataFrame(results).sort_values('usage_rate', ascending=False)
     
-    def analyze_slipstream_usage(self, logs: List[Dict]) -> Dict:
-        """Analyze slipstreaming patterns"""
-        
-        total_moves = 0
-        slipstream_moves = 0
-        slipstream_by_agent = defaultdict(lambda: {'total': 0, 'slipstream': 0})
-        
-        for log in logs:
-            # Map player IDs to agent types
-            agent_map = {a['player_id']: a['type'] for a in log['agents']}
-            
-            for turn in log['move_history']:
-                if turn['move']['success']:
-                    player_id = turn['player']
-                    agent_type = agent_map[player_id]
-                    
-                    total_moves += 1
-                    slipstream_by_agent[agent_type]['total'] += 1
-                    
-                    if turn['move']['used_slipstream']:
-                        slipstream_moves += 1
-                        slipstream_by_agent[agent_type]['slipstream'] += 1
-        
-        overall_rate = slipstream_moves / total_moves if total_moves > 0 else 0
-        
-        agent_rates = {}
-        for agent_type, counts in slipstream_by_agent.items():
-            agent_rates[agent_type] = (counts['slipstream'] / counts['total'] 
-                                       if counts['total'] > 0 else 0)
-        
-        return {
-            'overall_slipstream_rate': overall_rate,
-            'by_agent': agent_rates
-        }
     
     def analyze_score_distribution(self, logs: List[Dict]) -> Dict:
         """Analyze score distributions"""
@@ -226,17 +205,6 @@ class GameAnalyzer:
         report_lines.append("-" * 80)
         card_usage = self.analyze_card_usage(logs)
         report_lines.append(card_usage.to_string())
-        report_lines.append("")
-        
-        # Slipstream usage
-        report_lines.append("-" * 80)
-        report_lines.append("SLIPSTREAM USAGE")
-        report_lines.append("-" * 80)
-        slipstream = self.analyze_slipstream_usage(logs)
-        report_lines.append(f"Overall slipstream rate: {slipstream['overall_slipstream_rate']:.2%}")
-        report_lines.append("\nBy agent type:")
-        for agent, rate in slipstream['by_agent'].items():
-            report_lines.append(f"  {agent}: {rate:.2%}")
         report_lines.append("")
         
         # Score distribution
