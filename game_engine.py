@@ -154,8 +154,12 @@ class GameEngine:
             player.hand.remove(card)
             self.state.discard_pile.append(card)
         
-        # Check for sprint points
-        points_earned = self._check_sprint_scoring(move.rider, new_position)
+        # Check for sprint points on ALL positions crossed (not just the final position)
+        points_earned = 0
+        for pos in range(old_position + 1, new_position + 1):
+            points = self._check_sprint_scoring(move.rider, pos)
+            points_earned += points
+        
         if points_earned > 0:
             player.points += points_earned
         
@@ -292,7 +296,12 @@ class GameEngine:
         }
     
     def _check_sprint_scoring(self, rider: Rider, position: int) -> int:
-        """Check if rider scores points at a sprint"""
+        """Check if rider scores points at a sprint
+        
+        Riders score points based on arrival order:
+        - Intermediate sprints (last field of each tile): Top 3 get [3, 2, 1]
+        - Final sprint (finish line): Top 5 get [12, 8, 5, 3, 1]
+        """
         tile = self.state.get_tile_at_position(position)
         
         if not tile or tile.terrain not in [TerrainType.SPRINT, TerrainType.FINISH]:
@@ -301,40 +310,30 @@ class GameEngine:
         if not tile.sprint_points:
             return 0
         
-        # Get all riders at this position
-        riders_here = self.state.get_riders_at_position(position)
+        # Track arrival order at this sprint
+        if position not in self.state.sprint_arrivals:
+            self.state.sprint_arrivals[position] = []
         
-        # Sort riders by arrival order (first to arrive gets best points)
-        # For simplicity, we'll award based on player order in same turn
-        # In real game, would need to track exact arrival timing
+        # Check if this rider has already been recorded at this sprint
+        if rider in self.state.sprint_arrivals[position]:
+            return 0  # Already scored here
         
-        # Find position in scoring
-        scoring_position = len([r for p in self.state.players 
-                               for r in p.riders 
-                               if r.position == position and r != rider])
+        # Record this rider's arrival
+        self.state.sprint_arrivals[position].append(rider)
         
+        # Determine scoring position (0-indexed)
+        scoring_position = len(self.state.sprint_arrivals[position]) - 1
+        
+        # Award points if within scoring positions
         if scoring_position < len(tile.sprint_points):
             return tile.sprint_points[scoring_position]
         
         return 0
     
     def process_end_of_race(self) -> dict:
-        """Calculate final scores at end of race"""
-        # Get all riders at finish
-        finish_position = self.state.track_length - 1
-        finish_tile = self.state.get_tile_at_position(finish_position)
-        
-        # Get riders sorted by position (highest first)
-        all_riders = [(r, r.position) for p in self.state.players for r in p.riders]
-        all_riders.sort(key=lambda x: x[1], reverse=True)
-        
-        # Award finish points
-        finish_points = finish_tile.sprint_points if finish_tile else [15, 10, 7, 5, 3]
-        
-        for i, (rider, pos) in enumerate(all_riders):
-            if pos >= finish_position and i < len(finish_points):
-                player = self.state.players[rider.player_id]
-                player.points += finish_points[i]
+        """Calculate final standings - points already awarded during play"""
+        # All points have already been awarded during gameplay when riders
+        # crossed sprint lines. Just calculate final standings.
         
         # Get final standings
         standings = sorted(enumerate(self.state.players), 

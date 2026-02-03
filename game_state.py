@@ -281,6 +281,10 @@ class GameState:
         self.checkpoints_reached: Dict[Rider, Set[int]] = {
             rider: set() for player in self.players for rider in player.riders
         }
+        
+        # Sprint arrival tracking: track order of arrival at each sprint point
+        # Key = position, Value = list of riders in arrival order
+        self.sprint_arrivals: Dict[int, List[Rider]] = {}
     
     def _deal_initial_hands(self):
         """Deal initial hands according to game rules:
@@ -339,20 +343,30 @@ class GameState:
         track = []
         position = 0
         
-        for tile_id in tile_config:
+        for tile_idx, tile_id in enumerate(tile_config):
             if tile_id not in RACE_TILES:
                 raise ValueError(f"Invalid tile_id: {tile_id}. Must be 1-5.")
             
             race_tile = RACE_TILES[tile_id]
             
             # Add all 20 fields from this tile
+            tile_start_pos = position
             for field_idx, terrain in enumerate(race_tile.terrain_map):
                 track.append(TrackTile(position, terrain))
                 position += 1
-        
-        # Mark the last position as finish
-        track[-1].terrain = TerrainType.FINISH
-        track[-1].sprint_points = [15, 10, 7, 5, 3]  # Finish line points
+            
+            # Mark the last field of each tile as a sprint (except the final tile)
+            is_final_tile = (tile_idx == len(tile_config) - 1)
+            last_field_of_tile = position - 1
+            
+            if is_final_tile:
+                # Final tile: last field is FINISH with different points
+                track[last_field_of_tile].terrain = TerrainType.FINISH
+                track[last_field_of_tile].sprint_points = [12, 8, 5, 3, 1]  # Top 5 riders
+            else:
+                # Intermediate tiles: last field is SPRINT
+                track[last_field_of_tile].terrain = TerrainType.SPRINT
+                track[last_field_of_tile].sprint_points = [3, 2, 1]  # Top 3 riders
         
         return track
     
