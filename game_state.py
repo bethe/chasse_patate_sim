@@ -66,28 +66,32 @@ class Card:
         if self.is_energy_card():
             return 1
         
-        # Select the appropriate mode
-        if play_mode == PlayMode.PULL:
-            terrain_map = {
-                TerrainType.FLAT: self.pull_flat,
-                TerrainType.COBBLES: self.pull_cobbles,
-                TerrainType.CLIMB: self.pull_climb,
-                TerrainType.DESCENT: self.pull_descent,
-            }
-        else:  # PlayMode.ATTACK
-            terrain_map = {
-                TerrainType.FLAT: self.attack_flat,
-                TerrainType.COBBLES: self.attack_cobbles,
-                TerrainType.CLIMB: self.attack_climb,
-                TerrainType.DESCENT: self.attack_descent,
-            }
-        
         # Handle special terrain types (Sprint/Finish use flat values)
+        actual_terrain = terrain
         if terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
-            terrain = TerrainType.FLAT
+            actual_terrain = TerrainType.FLAT
         
-        movement = terrain_map.get(terrain, 0)
-        return movement if movement is not None else 0
+        # Select the appropriate mode and terrain
+        if play_mode == PlayMode.PULL:
+            if actual_terrain == TerrainType.FLAT:
+                return self.pull_flat if self.pull_flat is not None else 0
+            elif actual_terrain == TerrainType.COBBLES:
+                return self.pull_cobbles if self.pull_cobbles is not None else 0
+            elif actual_terrain == TerrainType.CLIMB:
+                return self.pull_climb if self.pull_climb is not None else 0
+            elif actual_terrain == TerrainType.DESCENT:
+                return self.pull_descent if self.pull_descent is not None else 0
+        else:  # PlayMode.ATTACK
+            if actual_terrain == TerrainType.FLAT:
+                return self.attack_flat if self.attack_flat is not None else 0
+            elif actual_terrain == TerrainType.COBBLES:
+                return self.attack_cobbles if self.attack_cobbles is not None else 0
+            elif actual_terrain == TerrainType.CLIMB:
+                return self.attack_climb if self.attack_climb is not None else 0
+            elif actual_terrain == TerrainType.DESCENT:
+                return self.attack_descent if self.attack_descent is not None else 0
+        
+        return 0
 
 
 @dataclass
