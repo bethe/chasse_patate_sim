@@ -48,11 +48,9 @@ class GameEngine:
             # TODO: DRAFT actions (placeholder)
         
         # TEAM CAR action (available once per turn, not per rider)
-        # Player draws 2 cards and discards 1 card of their choice
-        if len(player.hand) > 0:  # Need at least 1 card to discard
-            # For simplicity, we'll just add one TEAM_CAR move
-            # The actual card to discard will be chosen during execution
-            valid_moves.append(Move(ActionType.TEAM_CAR, player.riders[0], []))
+        # Player draws 2 cards, then discards 1 card of their choice
+        # Can be used even with 0 cards (discard happens after drawing)
+        valid_moves.append(Move(ActionType.TEAM_CAR, player.riders[0], []))
         
         return valid_moves
     
@@ -229,8 +227,10 @@ class GameEngine:
         return total
     
     def _execute_team_car(self, move: Move, player: Player, old_position: int, old_terrain: str) -> dict:
-        """Execute Team Car action: Draw 2 cards, discard 1 card"""
-        # Draw 2 cards
+        """Execute Team Car action: Draw 2 cards first, then discard 1 card"""
+        hand_size_before = len(player.hand)
+        
+        # Draw 2 cards FIRST
         cards_drawn = []
         for _ in range(2):
             new_card = self.state.draw_card()
@@ -238,20 +238,34 @@ class GameEngine:
                 player.hand.append(new_card)
                 cards_drawn.append(new_card.card_type.value)
         
-        # Choose which card to discard
-        # For now, agents will pass which card to discard via move.cards
-        # If no card specified, discard the first card in hand
+        # Now choose which card to discard from the UPDATED hand
+        # Priority: Discard Energy cards first, then others
+        card_to_discard = None
+        
+        # If agent specified a card type to discard via move.cards
         if move.cards and len(move.cards) > 0:
-            card_to_discard = move.cards[0]
-        else:
-            # Default: discard first card in hand
-            card_to_discard = player.hand[0] if player.hand else None
+            # Agent pre-selected a card type - find a matching card in current hand
+            target_card_type = move.cards[0].card_type
+            matching_cards = [c for c in player.hand if c.card_type == target_card_type]
+            if matching_cards:
+                card_to_discard = matching_cards[0]
+        
+        # If no card specified or not found, use default strategy
+        if not card_to_discard and player.hand:
+            # Prefer Energy cards
+            energy_cards = [c for c in player.hand if c.is_energy_card()]
+            if energy_cards:
+                card_to_discard = energy_cards[0]
+            else:
+                card_to_discard = player.hand[0]
         
         card_discarded = None
-        if card_to_discard and card_to_discard in player.hand:
+        if card_to_discard:
             player.hand.remove(card_to_discard)
             self.state.discard_pile.append(card_to_discard)
             card_discarded = card_to_discard.card_type.value
+        
+        hand_size_after = len(player.hand)
         
         # Rider doesn't move
         new_position = old_position
@@ -269,6 +283,8 @@ class GameEngine:
             'cards_played': [],
             'cards_drawn': cards_drawn,
             'card_discarded': card_discarded,
+            'hand_size_before': hand_size_before,
+            'hand_size_after': hand_size_after,
             'num_cards': 0,
             'movement': 0,
             'points_earned': 0,
