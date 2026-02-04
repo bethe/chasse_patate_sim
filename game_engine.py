@@ -485,7 +485,7 @@ class GameEngine:
                 'new_position': drafter_new_pos
             })
         
-        # Check sprint points and checkpoints for lead rider only (simplified)
+        # Check sprint points for lead rider only
         points_earned = 0
         for pos in range(old_position + 1, new_position + 1):
             points = self._check_sprint_scoring(move.rider, pos)
@@ -493,6 +493,47 @@ class GameEngine:
         
         if points_earned > 0:
             player.points += points_earned
+        
+        # Check checkpoints for ALL riders (lead + drafters)
+        cards_drawn = 0
+        checkpoints_reached = []
+        
+        # Check lead rider
+        for checkpoint in range(10, new_position + 1, 10):
+            if checkpoint > old_position and not self.state.has_rider_reached_checkpoint(move.rider, checkpoint):
+                self.state.mark_checkpoint_reached(move.rider, checkpoint)
+                if checkpoint not in checkpoints_reached:
+                    checkpoints_reached.append(checkpoint)
+                
+                # Draw 3 cards for this checkpoint
+                for _ in range(3):
+                    new_card = self.state.draw_card()
+                    if new_card:
+                        player.hand.append(new_card)
+                        cards_drawn += 1
+        
+        # Check each drafting rider
+        for drafter_info in drafting_results:
+            drafter_old_pos = drafter_info['old_position']
+            drafter_new_pos = drafter_info['new_position']
+            
+            # Find the actual rider object
+            drafter_rider = next((r for r in player.riders 
+                                 if f"P{r.player_id}R{r.rider_id}" == drafter_info['rider']), None)
+            
+            if drafter_rider:
+                for checkpoint in range(10, drafter_new_pos + 1, 10):
+                    if checkpoint > drafter_old_pos and not self.state.has_rider_reached_checkpoint(drafter_rider, checkpoint):
+                        self.state.mark_checkpoint_reached(drafter_rider, checkpoint)
+                        if checkpoint not in checkpoints_reached:
+                            checkpoints_reached.append(checkpoint)
+                        
+                        # Draw 3 cards for this checkpoint
+                        for _ in range(3):
+                            new_card = self.state.draw_card()
+                            if new_card:
+                                player.hand.append(new_card)
+                                cards_drawn += 1
         
         result = {
             'success': True,
@@ -508,8 +549,8 @@ class GameEngine:
             'movement': pull_movement,
             'points_earned': points_earned,
             'drafting_riders': drafting_results,
-            'checkpoints_reached': None,
-            'cards_drawn': 0
+            'checkpoints_reached': checkpoints_reached if checkpoints_reached else None,
+            'cards_drawn': cards_drawn
         }
         
         # Store for potential drafting
@@ -542,6 +583,33 @@ class GameEngine:
         new_tile = self.state.get_tile_at_position(new_position)
         new_terrain = new_tile.terrain.value if new_tile else "Unknown"
         
+        # Check checkpoints for ALL riders (primary + drafters)
+        cards_drawn = 0
+        checkpoints_reached = []
+        
+        # all_drafting_riders already contains [primary + drafting_riders]
+        for drafter_info in drafting_results:
+            drafter_old_pos = drafter_info['old_position']
+            drafter_new_pos = drafter_info['new_position']
+            
+            # Find the actual rider object
+            drafter_rider = next((r for r in player.riders 
+                                 if f"P{r.player_id}R{r.rider_id}" == drafter_info['rider']), None)
+            
+            if drafter_rider:
+                for checkpoint in range(10, drafter_new_pos + 1, 10):
+                    if checkpoint > drafter_old_pos and not self.state.has_rider_reached_checkpoint(drafter_rider, checkpoint):
+                        self.state.mark_checkpoint_reached(drafter_rider, checkpoint)
+                        if checkpoint not in checkpoints_reached:
+                            checkpoints_reached.append(checkpoint)
+                        
+                        # Draw 3 cards for this checkpoint
+                        for _ in range(3):
+                            new_card = self.state.draw_card()
+                            if new_card:
+                                player.hand.append(new_card)
+                                cards_drawn += 1
+        
         result = {
             'success': True,
             'action': 'TeamDraft',
@@ -556,8 +624,8 @@ class GameEngine:
             'movement': draft_movement,
             'points_earned': 0,
             'drafting_riders': drafting_results,
-            'checkpoints_reached': None,
-            'cards_drawn': 0
+            'checkpoints_reached': checkpoints_reached if checkpoints_reached else None,
+            'cards_drawn': cards_drawn
         }
         
         # Store for potential future drafting
