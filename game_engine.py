@@ -756,7 +756,7 @@ class GameEngine:
                                for r in p.riders],
             'opponent_scores': [p.points for p in self.state.players if p.player_id != player_id],
             'track_length': self.state.track_length,
-            'current_turn': self.state.current_turn,
+            'current_round': self.state.current_round,
             'deck_size': len(self.state.deck),
             'discard_size': len(self.state.discard_pile)
         }

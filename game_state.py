@@ -427,11 +427,6 @@ class GameState:
         
         return card
     
-    @property
-    def current_turn(self) -> int:
-        """Alias for current_round, for backward compatibility with logging/analysis."""
-        return self.current_round
-
     def start_new_round(self):
         """Begin a new round, clearing moved-riders tracking."""
         self.riders_moved_this_round.clear()
@@ -556,7 +551,7 @@ class GameState:
                 }
         
         return {
-            'turn': self.current_turn,
+            'round': self.current_round,
             'current_player': self.current_player_idx,
             'player_scores': [p.points for p in self.players],
             'player_hand_sizes': [len(p.hand) for p in self.players],

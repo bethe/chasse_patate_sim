@@ -35,10 +35,11 @@ class GameLogger:
             'agents': [{'player_id': a.player_id, 'type': a.name} for a in agents]
         }
     
-    def log_turn(self, turn_num: int, player_id: int, move_result: dict, 
-                 game_state: dict):
-        """Log a single turn"""
+    def log_turn(self, round_num: int, turn_num: int, player_id: int,
+                 move_result: dict, game_state: dict):
+        """Log a single turn within a round"""
         turn_data = {
+            'round': round_num,
             'turn': turn_num,
             'player': player_id,
             'move': move_result,
@@ -150,7 +151,8 @@ class GameSimulator:
 
                 # Log the turn
                 game_summary = state.get_game_summary()
-                self.logger.log_turn(turn_count, current_player.player_id,
+                self.logger.log_turn(state.current_round, turn_count,
+                                     current_player.player_id,
                                      move_result, game_summary)
 
                 if self.verbose:
@@ -186,6 +188,7 @@ class GameSimulator:
             game_over_reason = base_reason
         
         final_result['game_over_reason'] = game_over_reason
+        final_result['total_rounds'] = state.current_round
         final_result['total_turns'] = turn_count
         
         # Count riders at finish
@@ -197,7 +200,7 @@ class GameSimulator:
         
         if self.verbose:
             print(f"\n{'='*60}")
-            print(f"Game {game_id} Complete after {turn_count} turns")
+            print(f"Game {game_id} Complete after {state.current_round} rounds ({turn_count} turns)")
             print(f"Winner: {final_result['winner']} "
                   f"with {final_result['winner_score']} points")
             print(f"Final Scores: {final_result['final_scores']}")
