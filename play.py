@@ -455,8 +455,9 @@ def play_game():
 
     while not state.game_over and state.current_round < max_rounds:
         state.start_new_round()
+        patron = state.players[state.el_patron]
         print(f"\n{'~'*60}")
-        print(f"  ROUND {state.current_round}")
+        print(f"  ROUND {state.current_round}  |  El Patron: {patron.name} (Player {state.el_patron})")
         print(f"{'~'*60}")
 
         while True:

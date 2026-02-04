@@ -757,6 +757,7 @@ class GameEngine:
             'opponent_scores': [p.points for p in self.state.players if p.player_id != player_id],
             'track_length': self.state.track_length,
             'current_round': self.state.current_round,
+            'el_patron': self.state.el_patron,
             'deck_size': len(self.state.deck),
             'discard_size': len(self.state.discard_pile)
         }

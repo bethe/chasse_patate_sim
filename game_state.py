@@ -266,6 +266,7 @@ class GameState:
         self.game_over = False
         self.riders_moved_this_round: Set = set()
         self.players_acted_at_position: Dict[int, Set[int]] = {}  # position -> set of player_ids that have acted
+        self.el_patron: int = 0  # Player 0 is El Patron in round 1
         
         # Initialize players
         self.players = [Player(i, f"Player {i}") for i in range(num_players)]
@@ -434,6 +435,9 @@ class GameState:
         self.players_acted_at_position.clear()
         self.current_round += 1
         self.last_move = None
+        # Rotate El Patron to the next player (except for round 1)
+        if self.current_round > 1:
+            self.el_patron = (self.el_patron + 1) % self.num_players
         # Auto-mark finished riders as moved (they can't move further)
         finish_pos = self.track_length - 1
         for player in self.players:
@@ -441,16 +445,24 @@ class GameState:
                 if rider.position >= finish_pos:
                     self.riders_moved_this_round.add(rider)
 
+    def _player_order_key(self, player_id: int) -> int:
+        """Return a sort key for player_id based on El Patron round-robin order.
+
+        El Patron goes first, then subsequent players wrap around.
+        E.g. with 3 players and el_patron=2: order is 2, 0, 1 -> keys 0, 1, 2.
+        """
+        return (player_id - self.el_patron) % self.num_players
+
     def get_unmoved_riders(self) -> List:
         """Get all riders that haven't moved this round, sorted by position descending,
-        with ties broken by player_id ascending, then rider_id ascending."""
+        with ties broken by El Patron round-robin order, then rider_id ascending."""
         unmoved = []
         for player in self.players:
             for rider in player.riders:
                 if rider not in self.riders_moved_this_round:
                     unmoved.append(rider)
-        # Sort: highest position first, then lowest player_id, then lowest rider_id
-        unmoved.sort(key=lambda r: (-r.position, r.player_id, r.rider_id))
+        # Sort: highest position first, then El Patron order, then lowest rider_id
+        unmoved.sort(key=lambda r: (-r.position, self._player_order_key(r.player_id), r.rider_id))
         return unmoved
 
     def mark_riders_moved(self, riders: List, acted_position: int = None):
@@ -475,9 +487,10 @@ class GameState:
 
         Rules:
         - Most advanced unmoved rider goes first
-        - If tied position, different players: turns alternate by player_id order.
-          Once a player makes a move at a position, the turn passes to the next
-          player before that player can move again at the same position.
+        - If tied position, different players: El Patron moves first, then
+          subsequent players in round-robin order. Once a player makes a move
+          at a position, the turn passes to the next player before that player
+          can move again at the same position.
         - If tied position, same player: that player picks among their riders there
         """
         unmoved = self.get_unmoved_riders()
@@ -584,6 +597,7 @@ class GameState:
         
         return {
             'round': self.current_round,
+            'el_patron': self.el_patron,
             'current_player': self.current_player_idx,
             'player_scores': [p.points for p in self.players],
             'player_hand_sizes': [len(p.hand) for p in self.players],
