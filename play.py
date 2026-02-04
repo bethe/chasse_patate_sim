@@ -212,7 +212,8 @@ def print_board(state: GameState):
             tile = state.get_tile_at_position(rider.position)
             terrain = tile.terrain.value if tile else "?"
             parts.append(f"{rider.rider_type.value}@{rider.position}[{terrain}]")
-        print(f"  P{player.player_id} {player.name}: {', '.join(parts)}  | pts={player.points} hand={len(player.hand)}")
+        patron_tag = " [El Patron]" if player.player_id == state.el_patron else ""
+        print(f"  P{player.player_id} {player.name}{patron_tag}: {', '.join(parts)}  | pts={player.points} hand={len(player.hand)}")
     print(f"  Deck: {len(state.deck)}  Discard: {len(state.discard_pile)}")
     print()
 
