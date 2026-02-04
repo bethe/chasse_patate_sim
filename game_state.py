@@ -265,6 +265,7 @@ class GameState:
         self.current_player_idx = 0
         self.game_over = False
         self.riders_moved_this_round: Set = set()
+        self.players_acted_at_position: Dict[int, Set[int]] = {}  # position -> set of player_ids that have acted
         
         # Initialize players
         self.players = [Player(i, f"Player {i}") for i in range(num_players)]
@@ -430,6 +431,7 @@ class GameState:
     def start_new_round(self):
         """Begin a new round, clearing moved-riders tracking."""
         self.riders_moved_this_round.clear()
+        self.players_acted_at_position.clear()
         self.current_round += 1
         self.last_move = None
         # Auto-mark finished riders as moved (they can't move further)
@@ -451,10 +453,20 @@ class GameState:
         unmoved.sort(key=lambda r: (-r.position, r.player_id, r.rider_id))
         return unmoved
 
-    def mark_riders_moved(self, riders: List):
-        """Mark multiple riders as having moved this round."""
+    def mark_riders_moved(self, riders: List, acted_position: int = None):
+        """Mark multiple riders as having moved this round.
+
+        Args:
+            riders: The riders to mark as moved.
+            acted_position: If provided, record that these riders' player acted at this position
+                           (used for tie-breaking when multiple players share a position).
+        """
         for rider in riders:
             self.riders_moved_this_round.add(rider)
+            if acted_position is not None:
+                if acted_position not in self.players_acted_at_position:
+                    self.players_acted_at_position[acted_position] = set()
+                self.players_acted_at_position[acted_position].add(rider.player_id)
 
     def determine_next_turn(self) -> Optional[Tuple]:
         """Determine whose turn it is and which rider(s) they can move.
@@ -463,23 +475,43 @@ class GameState:
 
         Rules:
         - Most advanced unmoved rider goes first
-        - If tied position, same player: that player picks among them
-        - If tied position, different players: lowest player_id first
+        - If tied position, different players: turns alternate by player_id order.
+          Once a player makes a move at a position, the turn passes to the next
+          player before that player can move again at the same position.
+        - If tied position, same player: that player picks among their riders there
         """
         unmoved = self.get_unmoved_riders()
         if not unmoved:
             return None  # round is complete
 
-        # The first unmoved rider determines the top position and player
-        next_rider = unmoved[0]
-        top_position = next_rider.position
-        next_player = self.players[next_rider.player_id]
+        top_position = unmoved[0].position
 
-        # Find all unmoved riders at the same top position belonging to the same player
-        eligible_riders = [r for r in unmoved
-                           if r.position == top_position and r.player_id == next_rider.player_id]
+        # Get all unmoved riders at the top position, grouped by player
+        riders_at_top = [r for r in unmoved if r.position == top_position]
 
-        self.current_player_idx = next_player.player_id
+        # Find which players haven't acted yet at this position
+        acted_here = self.players_acted_at_position.get(top_position, set())
+        players_not_yet_acted = []
+        for r in riders_at_top:
+            if r.player_id not in acted_here and r.player_id not in players_not_yet_acted:
+                players_not_yet_acted.append(r.player_id)
+
+        if players_not_yet_acted:
+            # Pick the first player (by player_id order, which is preserved by sorting)
+            next_player_id = players_not_yet_acted[0]
+        else:
+            # All players have acted once at this position — reset and start over
+            # (allows players with remaining riders to take further turns)
+            if top_position in self.players_acted_at_position:
+                self.players_acted_at_position[top_position].clear()
+            next_player_id = riders_at_top[0].player_id
+
+        next_player = self.players[next_player_id]
+
+        # Eligible riders: this player's unmoved riders at the top position
+        eligible_riders = [r for r in riders_at_top if r.player_id == next_player_id]
+
+        self.current_player_idx = next_player_id
         return (next_player, eligible_riders)
     
     def check_game_over(self) -> bool:

@@ -121,6 +121,7 @@ class GameSimulator:
 
                 current_player, eligible_riders = turn_info
                 agent = agents[current_player.player_id]
+                acted_position = eligible_riders[0].position  # position before move
 
                 # Agent chooses move (scoped to eligible riders)
                 move = agent.choose_move(engine, current_player, eligible_riders)
@@ -131,7 +132,7 @@ class GameSimulator:
                               f"{agent} has no valid moves!")
 
                     # Mark eligible riders as moved (skip them)
-                    state.mark_riders_moved(eligible_riders)
+                    state.mark_riders_moved(eligible_riders, acted_position)
                     turn_count += 1
 
                     if state.check_game_over():
@@ -147,7 +148,7 @@ class GameSimulator:
                 moved_riders = [move.rider]
                 if move.drafting_riders:
                     moved_riders.extend(move.drafting_riders)
-                state.mark_riders_moved(moved_riders)
+                state.mark_riders_moved(moved_riders, acted_position)
 
                 # Log the turn
                 game_summary = state.get_game_summary()

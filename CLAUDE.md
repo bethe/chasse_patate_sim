@@ -26,6 +26,9 @@ python generate_report.py
 
 # Usage examples and tutorials
 python example_usage.py
+
+# Play interactively against bots
+python play.py
 ```
 
 ## Project Structure
@@ -40,6 +43,7 @@ python example_usage.py
 | `quick_test.py` | Fast balance testing script |
 | `generate_report.py` | Standalone report generator |
 | `example_usage.py` | Usage examples |
+| `play.py` | Interactive play against bots (terminal UI) |
 
 Output goes to `game_logs/` (gitignored).
 
@@ -48,7 +52,8 @@ Output goes to `game_logs/` (gitignored).
 - **6 actions:** Pull, Attack, Draft, TeamPull, TeamDraft, TeamCar
 - **4 card types:** Energy, Rouleur, Sprinter, Climber
 - **3 riders per player**, each with their own hand/deck
-- Game ends when 5 riders finish, turn limit (150) hit, or cards run out
+- **Rounds:** each round, every rider moves once (most advanced first); turns alternate between players at tied positions
+- Game ends when 5 riders finish, round limit (150) hit, or cards run out
 - Agents implement `choose_move()` from abstract `Agent` base class
 - Factory: `create_agent(agent_type, player_id)` creates agents by name
 
