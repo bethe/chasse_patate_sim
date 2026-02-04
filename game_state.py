@@ -528,33 +528,40 @@ class GameState:
         return (next_player, eligible_riders)
     
     def check_game_over(self) -> bool:
-        """Check if game is over based on two conditions:
+        """Check if game is over based on three conditions:
         1. Five riders have reached the finish line
-        2. All players have run out of cards (and deck is empty)
+        2. One player has all 3 riders at the finish
+        3. All players have run out of cards (and deck is empty)
         """
         try:
-            # Condition 1: Check if 5 riders have finished
             finish_position = int(self.track_length - 1)
+
+            # Condition 1 & 2: Check finished riders
             riders_finished = 0
-            
             for player in self.players:
+                player_finished = 0
                 for rider in player.riders:
-                    # Ensure position is an integer and valid
                     rider_pos = int(rider.position) if rider.position is not None else 0
                     if rider_pos >= finish_position:
                         riders_finished += 1
-            
+                        player_finished += 1
+                # Condition 2: One player has all 3 riders finished
+                if player_finished >= 3:
+                    self.game_over = True
+                    return True
+
+            # Condition 1: 5 riders total finished
             if riders_finished >= 5:
                 self.game_over = True
                 return True
-            
-            # Condition 2: Check if all players are out of cards and deck is empty
+
+            # Condition 3: Check if all players are out of cards and deck is empty
             if len(self.deck) == 0:
                 all_players_empty = all(len(player.hand) == 0 for player in self.players)
                 if all_players_empty:
                     self.game_over = True
                     return True
-            
+
             return False
             
         except Exception as e:
@@ -573,12 +580,18 @@ class GameState:
                              for rider in player.riders 
                              if rider.position >= finish_position)
         
+        # Check if one player has all 3 riders finished
+        for player in self.players:
+            player_finished = sum(1 for r in player.riders if r.position >= finish_position)
+            if player_finished >= 3:
+                return f"team_fully_finished (Player {player.player_id} has all 3 riders at finish)"
+
         if riders_finished >= 5:
             return f"5_riders_finished ({riders_finished} riders at finish)"
-        
+
         if len(self.deck) == 0 and all(len(p.hand) == 0 for p in self.players):
             return "players_out_of_cards"
-        
+
         return "unknown"
     
     def get_game_summary(self) -> Dict:
