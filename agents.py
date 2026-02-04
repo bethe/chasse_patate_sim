@@ -426,6 +426,122 @@ class AdaptiveAgent(Agent):
         return score
 
 
+class WheelsuckerAgent(Agent):
+    """Agent that prioritizes drafting and positioning for future drafts"""
+    
+    def __init__(self, player_id: int):
+        super().__init__(player_id, "Wheelsucker")
+    
+    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+        """Prioritize drafting, then positioning for drafts, then TeamCar
+        
+        Only chooses draft/pull moves if total_advancement > 0
+        """
+        valid_moves = engine.get_valid_moves(player)
+        if not valid_moves:
+            return None
+        
+        # Priority 1: TeamDraft with biggest total advancement (only if > 0)
+        team_draft_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_DRAFT]
+        if team_draft_moves:
+            best_team_draft = max(team_draft_moves, key=lambda m: calculate_total_advancement(engine, m))
+            if calculate_total_advancement(engine, best_team_draft) > 0:
+                return best_team_draft
+        
+        # Priority 2: Draft with biggest total advancement (only if > 0)
+        draft_moves = [m for m in valid_moves if m.action_type == ActionType.DRAFT]
+        if draft_moves:
+            best_draft = max(draft_moves, key=lambda m: calculate_total_advancement(engine, m))
+            if calculate_total_advancement(engine, best_draft) > 0:
+                return best_draft
+        
+        # Priority 3: TeamPull with biggest total advancement (only if > 0)
+        team_pull_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_PULL]
+        if team_pull_moves:
+            best_team_pull = max(team_pull_moves, key=lambda m: calculate_total_advancement(engine, m))
+            if calculate_total_advancement(engine, best_team_pull) > 0:
+                return best_team_pull
+        
+        # Priority 4: Attack if it can win points (land on or cross sprint)
+        attack_moves = [m for m in valid_moves if m.action_type == ActionType.ATTACK]
+        if attack_moves:
+            for attack in attack_moves:
+                distance = engine._calculate_attack_movement(attack.rider, attack.cards)
+                old_pos = attack.rider.position
+                new_pos = min(old_pos + distance, engine.state.track_length - 1)
+                
+                # Check if any position crossed is a sprint or finish
+                for pos in range(old_pos + 1, new_pos + 1):
+                    tile = engine.state.get_tile_at_position(pos)
+                    if tile and tile.terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
+                        # This attack can win points
+                        return attack
+        
+        # Priority 5: Move to same field as opponent's rider (for future drafting)
+        positioning_moves = self._get_positioning_moves(valid_moves, engine, player, same_team=False)
+        if positioning_moves:
+            # Choose the one with most riders at destination (best drafting opportunity)
+            return max(positioning_moves, key=lambda m: self._count_riders_at_destination(m, engine, player))
+        
+        # Priority 6: Move to same field as own team rider (for TeamPull/TeamDraft)
+        team_positioning_moves = self._get_positioning_moves(valid_moves, engine, player, same_team=True)
+        if team_positioning_moves:
+            return max(team_positioning_moves, key=lambda m: self._count_riders_at_destination(m, engine, player))
+        
+        # Priority 7: TeamCar
+        team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+        if team_car_moves:
+            worst_card = choose_card_to_discard(player)
+            if worst_card:
+                team_car_moves[0].cards = [worst_card]
+            return team_car_moves[0]
+        
+        # Fallback: any move
+        return valid_moves[0]
+    
+    def _get_positioning_moves(self, valid_moves: List[Move], engine: GameEngine, 
+                               player: Player, same_team: bool) -> List[Move]:
+        """Get moves that position rider with other riders"""
+        positioning_moves = []
+        
+        for move in valid_moves:
+            if move.action_type in [ActionType.TEAM_CAR]:
+                continue
+            
+            # Calculate destination
+            distance = calculate_move_distance(engine, move)
+            if distance == 0:
+                continue
+            
+            destination = min(move.rider.position + distance, engine.state.track_length - 1)
+            
+            # Check if there are riders at destination
+            riders_at_dest = engine.state.get_riders_at_position(destination)
+            
+            if same_team:
+                # Looking for own team riders
+                has_own_riders = any(r.player_id == player.player_id and r != move.rider 
+                                    for r in riders_at_dest)
+                if has_own_riders:
+                    positioning_moves.append(move)
+            else:
+                # Looking for opponent riders
+                has_opponent_riders = any(r.player_id != player.player_id 
+                                         for r in riders_at_dest)
+                if has_opponent_riders:
+                    positioning_moves.append(move)
+        
+        return positioning_moves
+    
+    def _count_riders_at_destination(self, move: Move, engine: GameEngine, player: Player) -> int:
+        """Count how many riders (opponents or teammates) are at the destination"""
+        distance = calculate_move_distance(engine, move)
+        destination = min(move.rider.position + distance, engine.state.track_length - 1)
+        riders_at_dest = engine.state.get_riders_at_position(destination)
+        # Count riders excluding the moving rider
+        return len([r for r in riders_at_dest if r != move.rider])
+
+
 # Factory function to create agents
 def create_agent(agent_type: str, player_id: int) -> Agent:
     """Create an agent of the specified type"""
@@ -438,6 +554,7 @@ def create_agent(agent_type: str, player_id: int) -> Agent:
         'conservative': ConservativeAgent,
         'aggressive': AggressiveAgent,
         'adaptive': AdaptiveAgent,
+        'wheelsucker': WheelsuckerAgent,
         'rouleur_focus': lambda pid: CardTypeAgent(pid, CardType.ROULEUR),
         'sprinter_focus': lambda pid: CardTypeAgent(pid, CardType.SPRINTER),
         'climber_focus': lambda pid: CardTypeAgent(pid, CardType.CLIMBER),
@@ -454,5 +571,6 @@ def get_available_agents() -> List[str]:
     return [
         'random', 'greedy', 'lead_rider', 'balanced', 
         'sprint_hunter', 'conservative', 'aggressive', 'adaptive',
+        'wheelsucker',
         'rouleur_focus', 'sprinter_focus', 'climber_focus'
     ]

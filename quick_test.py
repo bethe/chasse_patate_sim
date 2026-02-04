@@ -21,7 +21,8 @@ def quick_balance_test():
     simulator = GameSimulator(num_players=2, verbose=False)
     
     # Test most common strategies
-    test_agents = ['random', 'greedy', 'balanced', 'aggressive', 'adaptive']
+    #test_agents = ['random', 'greedy', 'wheelsucker', 'aggressive', 'adaptive']
+    test_agents = ['wheelsucker']
     
     print(f"\nRunning tournament with agents: {test_agents}")
     tournament_results = simulator.run_tournament(
