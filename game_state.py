@@ -4,7 +4,7 @@ Handles all game state, cards, and rules
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Tuple
 from enum import Enum
 import random
 
@@ -261,9 +261,10 @@ class GameState:
         self.tile_config = tile_config
         self.track_length = len(tile_config) * 20  # Each tile is 20 fields
         
-        self.current_turn = 0
+        self.current_round = 0
         self.current_player_idx = 0
         self.game_over = False
+        self.riders_moved_this_round: Set = set()
         
         # Initialize players
         self.players = [Player(i, f"Player {i}") for i in range(num_players)]
@@ -426,11 +427,65 @@ class GameState:
         
         return card
     
-    def advance_turn(self):
-        """Move to next player's turn"""
-        self.current_player_idx = (self.current_player_idx + 1) % self.num_players
-        if self.current_player_idx == 0:
-            self.current_turn += 1
+    @property
+    def current_turn(self) -> int:
+        """Alias for current_round, for backward compatibility with logging/analysis."""
+        return self.current_round
+
+    def start_new_round(self):
+        """Begin a new round, clearing moved-riders tracking."""
+        self.riders_moved_this_round.clear()
+        self.current_round += 1
+        self.last_move = None
+        # Auto-mark finished riders as moved (they can't move further)
+        finish_pos = self.track_length - 1
+        for player in self.players:
+            for rider in player.riders:
+                if rider.position >= finish_pos:
+                    self.riders_moved_this_round.add(rider)
+
+    def get_unmoved_riders(self) -> List:
+        """Get all riders that haven't moved this round, sorted by position descending,
+        with ties broken by player_id ascending, then rider_id ascending."""
+        unmoved = []
+        for player in self.players:
+            for rider in player.riders:
+                if rider not in self.riders_moved_this_round:
+                    unmoved.append(rider)
+        # Sort: highest position first, then lowest player_id, then lowest rider_id
+        unmoved.sort(key=lambda r: (-r.position, r.player_id, r.rider_id))
+        return unmoved
+
+    def mark_riders_moved(self, riders: List):
+        """Mark multiple riders as having moved this round."""
+        for rider in riders:
+            self.riders_moved_this_round.add(rider)
+
+    def determine_next_turn(self) -> Optional[Tuple]:
+        """Determine whose turn it is and which rider(s) they can move.
+
+        Returns (player, eligible_riders) or None if round is over.
+
+        Rules:
+        - Most advanced unmoved rider goes first
+        - If tied position, same player: that player picks among them
+        - If tied position, different players: lowest player_id first
+        """
+        unmoved = self.get_unmoved_riders()
+        if not unmoved:
+            return None  # round is complete
+
+        # The first unmoved rider determines the top position and player
+        next_rider = unmoved[0]
+        top_position = next_rider.position
+        next_player = self.players[next_rider.player_id]
+
+        # Find all unmoved riders at the same top position belonging to the same player
+        eligible_riders = [r for r in unmoved
+                           if r.position == top_position and r.player_id == next_rider.player_id]
+
+        self.current_player_idx = next_player.player_id
+        return (next_player, eligible_riders)
     
     def check_game_over(self) -> bool:
         """Check if game is over based on two conditions:

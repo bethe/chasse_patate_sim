@@ -41,37 +41,43 @@ class GameEngine:
     def __init__(self, game_state: GameState):
         self.state = game_state
     
-    def get_valid_moves(self, player: Player) -> List[Move]:
-        """Get all valid actions (Pull, Attack, Draft, TeamCar, TeamPull, TeamDraft) for a player"""
+    def get_valid_moves(self, player: Player, eligible_riders: List[Rider] = None) -> List[Move]:
+        """Get all valid actions (Pull, Attack, Draft, TeamCar, TeamPull, TeamDraft) for a player.
+
+        Args:
+            player: The player whose turn it is
+            eligible_riders: If provided, only generate moves for these riders (unmoved this round).
+                            If None, generates for all riders (backward compat).
+        """
         valid_moves = []
-        
-        # Generate moves for each rider
-        for rider in player.riders:
+        riders_to_move = eligible_riders if eligible_riders is not None else player.riders
+
+        # Generate moves for each eligible rider
+        for rider in riders_to_move:
             # PULL actions (1-3 cards)
             pull_moves = self._get_pull_moves(rider, player)
             valid_moves.extend(pull_moves)
-            
+
             # ATTACK actions (exactly 3 cards, must include at least 1 matching rider card)
             attack_moves = self._get_attack_moves(rider, player)
             valid_moves.extend(attack_moves)
-            
+
             # DRAFT actions (follow another rider's Pull move)
             draft_moves = self._get_draft_moves(rider, player)
             valid_moves.extend(draft_moves)
-        
-        # TEAM PULL actions (Pull + teammates draft)
-        team_pull_moves = self._get_team_pull_moves(player)
+
+        # TEAM PULL actions (Pull + teammates draft) - only unmoved riders can participate
+        team_pull_moves = self._get_team_pull_moves(player, riders_to_move)
         valid_moves.extend(team_pull_moves)
-        
-        # TEAM DRAFT actions (multiple riders draft together)
-        team_draft_moves = self._get_team_draft_moves(player)
+
+        # TEAM DRAFT actions (multiple riders draft together) - only unmoved riders
+        team_draft_moves = self._get_team_draft_moves(player, riders_to_move)
         valid_moves.extend(team_draft_moves)
-        
-        # TEAM CAR action (available once per turn, not per rider)
-        # Player draws 2 cards, then discards 1 card of their choice
-        # Can be used even with 0 cards (discard happens after drawing)
-        valid_moves.append(Move(ActionType.TEAM_CAR, player.riders[0], []))
-        
+
+        # TEAM CAR action for each eligible rider
+        for rider in riders_to_move:
+            valid_moves.append(Move(ActionType.TEAM_CAR, rider, []))
+
         return valid_moves
     
     def _get_pull_moves(self, rider: Rider, player: Player) -> List[Move]:
@@ -160,18 +166,20 @@ class GameEngine:
         
         return moves
     
-    def _get_team_pull_moves(self, player: Player) -> List[Move]:
+    def _get_team_pull_moves(self, player: Player, eligible_riders: List[Rider] = None) -> List[Move]:
         """Generate TeamPull moves where one rider pulls and teammates draft
-        
+
         Requirements:
         - Multiple riders from same player at same position
         - One rider does Pull, others can draft
+        - All riders must be eligible (unmoved this round)
         """
         moves = []
-        
-        # Group riders by position
+        riders_pool = eligible_riders if eligible_riders is not None else player.riders
+
+        # Group eligible riders by position
         riders_by_position = {}
-        for rider in player.riders:
+        for rider in riders_pool:
             pos = rider.position
             if pos not in riders_by_position:
                 riders_by_position[pos] = []
@@ -205,34 +213,36 @@ class GameEngine:
         
         return moves
     
-    def _get_team_draft_moves(self, player: Player) -> List[Move]:
+    def _get_team_draft_moves(self, player: Player, eligible_riders: List[Rider] = None) -> List[Move]:
         """Generate TeamDraft moves where multiple riders draft together
-        
+
         Requirements:
         - Multiple riders from same player at same position
         - Last move was Pull, Draft, TeamPull, or TeamDraft by different player
         - Started from same position
+        - All riders must be eligible (unmoved this round)
         """
         moves = []
-        
+        riders_pool = eligible_riders if eligible_riders is not None else player.riders
+
         # Check if there was a previous move that allows drafting
         if not self.state.last_move:
             return moves
-        
+
         last_action = self.state.last_move.get('action')
         if last_action not in ['Pull', 'Draft', 'TeamPull', 'TeamDraft']:
             return moves
-        
+
         # Check if last move was by a different player
         last_rider_str = self.state.last_move.get('rider', '')
         if last_rider_str.startswith(f'P{player.player_id}'):
             return moves
-        
+
         # Find the starting position of the last move
         last_old_position = self.state.last_move.get('old_position', -1)
-        
-        # Find all player's riders at that position
-        eligible_riders = [r for r in player.riders if r.position == last_old_position]
+
+        # Find all eligible riders at that position
+        eligible_riders = [r for r in riders_pool if r.position == last_old_position]
         
         if len(eligible_riders) < 2:
             return moves  # Need at least 2 riders for TeamDraft

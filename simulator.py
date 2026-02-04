@@ -105,76 +105,83 @@ class GameSimulator:
             print(f"Players: {[str(a) for a in agents]}")
             print(f"{'='*60}\n")
         
-        # Game loop
+        # Game loop - round based
         turn_count = 0
-        max_turns = 150  # Turn limit per game
-        
-        while not state.game_over and turn_count < max_turns:
-            current_player = state.get_current_player()
-            agent = agents[current_player.player_id]
-            
-            # Agent chooses move
-            move = agent.choose_move(engine, current_player)
-            
-            if move is None:
+        max_rounds = 150  # Round limit per game
+
+        while not state.game_over and state.current_round < max_rounds:
+            state.start_new_round()
+
+            # Process all riders within this round
+            while True:
+                turn_info = state.determine_next_turn()
+                if turn_info is None:
+                    break  # All riders moved, round is over
+
+                current_player, eligible_riders = turn_info
+                agent = agents[current_player.player_id]
+
+                # Agent chooses move (scoped to eligible riders)
+                move = agent.choose_move(engine, current_player, eligible_riders)
+
+                if move is None:
+                    if self.verbose:
+                        print(f"Round {state.current_round} Turn {turn_count}: "
+                              f"{agent} has no valid moves!")
+
+                    # Mark eligible riders as moved (skip them)
+                    state.mark_riders_moved(eligible_riders)
+                    turn_count += 1
+
+                    if state.check_game_over():
+                        if self.verbose:
+                            print(f"  Game ending: {state.get_game_over_reason()}")
+                        break
+                    continue
+
+                # Execute move
+                move_result = engine.execute_move(move)
+
+                # Mark all riders involved as moved
+                moved_riders = [move.rider]
+                if move.drafting_riders:
+                    moved_riders.extend(move.drafting_riders)
+                state.mark_riders_moved(moved_riders)
+
+                # Log the turn
+                game_summary = state.get_game_summary()
+                self.logger.log_turn(turn_count, current_player.player_id,
+                                     move_result, game_summary)
+
                 if self.verbose:
-                    print(f"Turn {turn_count}: {agent} has no valid moves!")
-                
-                # Check if player is out of cards
-                if len(current_player.hand) == 0:
-                    if self.verbose:
-                        print(f"  {agent} has no cards left!")
-                
-                # Always check if game should end
-                if state.check_game_over():
-                    if self.verbose:
-                        print(f"  Game ending: {state.get_game_over_reason()}")
-                    break
-                
-                state.advance_turn()
+                    rider_names = [f"P{r.player_id}R{r.rider_id}" for r in moved_riders]
+                    print(f"Round {state.current_round} Turn {turn_count}: "
+                          f"{agent} - {move.action_type.value} "
+                          f"Riders {rider_names} "
+                          f"({move_result.get('movement', 0)} movement)")
+
                 turn_count += 1
-                continue
-            
-            # Execute move
-            move_result = engine.execute_move(move)
-            
-            # Log the turn
-            game_summary = state.get_game_summary()
-            self.logger.log_turn(turn_count, current_player.player_id, 
-                               move_result, game_summary)
-            
-            if self.verbose:
-                print(f"Turn {turn_count}: {agent} - "
-                      f"Rider {move.rider.rider_id} "
-                      f"moved to position {move.target_position} "
-                      f"(card: {move.card.card_type.value}, "
-                      f"mode: {move.play_mode.value})")
-            
-            # Check if game is over
-            state.check_game_over()
-            
-            # Next turn
-            state.advance_turn()
-            turn_count += 1
-        
-        # Final check of game over state (in case we hit max_turns)
+
+                # Check if game is over
+                if state.check_game_over():
+                    break
+
+        # Final check of game over state (in case we hit max_rounds)
         if not state.game_over:
-            # Check normal game over conditions first
             state.check_game_over()
-            
-            # If still not game over and we hit turn limit, force end
-            if not state.game_over and turn_count >= max_turns:
+
+            if not state.game_over and state.current_round >= max_rounds:
                 state.game_over = True
                 if self.verbose:
-                    print(f"Game ended: Turn limit reached ({max_turns} turns)")
+                    print(f"Game ended: Round limit reached ({max_rounds} rounds)")
         
         # Calculate final results
         final_result = engine.process_end_of_race()
         
         # Determine game over reason
         base_reason = state.get_game_over_reason()
-        if turn_count >= max_turns and (base_reason is None or base_reason == "unknown"):
-            game_over_reason = "Turn limit reached"
+        if state.current_round >= max_rounds and (base_reason is None or base_reason == "unknown"):
+            game_over_reason = "Round limit reached"
         else:
             game_over_reason = base_reason
         
