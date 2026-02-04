@@ -131,9 +131,9 @@ class GameEngine:
         """Generate draft moves for a rider
         
         A rider can draft if:
-        1. The last move was a PULL action
+        1. The last move was Pull, Draft, TeamPull, or TeamDraft
         2. The last move was by a different player
-        3. The rider's current position matches the old_position of the last Pull move
+        3. The rider's current position matches the old_position of the last move
         """
         moves = []
         
@@ -141,8 +141,8 @@ class GameEngine:
         if not self.state.last_move:
             return moves
         
-        # Check if last move was a Pull action
-        if self.state.last_move.get('action') != 'Pull':
+        # Check if last move was one of the allowed types
+        if self.state.last_move.get('action') not in ['Pull', 'Draft', 'TeamPull', 'TeamDraft']:
             return moves
         
         # Check if last move was by a different player
@@ -150,13 +150,12 @@ class GameEngine:
         if last_rider_str.startswith(f'P{player.player_id}'):
             return moves  # Can't draft from your own rider
         
-        # Check if rider's current position matches the starting position of the last Pull
+        # Check if rider's current position matches the starting position of the last move
         last_old_position = self.state.last_move.get('old_position', -1)
         if rider.position != last_old_position:
             return moves
         
         # Rider is eligible to draft!
-        # Store the movement distance in a special way (we'll retrieve it in execute_move)
         moves.append(Move(ActionType.DRAFT, rider, []))
         
         return moves
@@ -211,17 +210,17 @@ class GameEngine:
         
         Requirements:
         - Multiple riders from same player at same position
-        - Last move was Pull or TeamPull by different player
+        - Last move was Pull, Draft, TeamPull, or TeamDraft by different player
         - Started from same position
         """
         moves = []
         
-        # Check if there was a previous move that was Pull or TeamPull
+        # Check if there was a previous move that allows drafting
         if not self.state.last_move:
             return moves
         
         last_action = self.state.last_move.get('action')
-        if last_action not in ['Pull', 'TeamPull']:
+        if last_action not in ['Pull', 'Draft', 'TeamPull', 'TeamDraft']:
             return moves
         
         # Check if last move was by a different player
@@ -229,7 +228,7 @@ class GameEngine:
         if last_rider_str.startswith(f'P{player.player_id}'):
             return moves
         
-        # Find the starting position of the last Pull/TeamPull
+        # Find the starting position of the last move
         last_old_position = self.state.last_move.get('old_position', -1)
         
         # Find all player's riders at that position
@@ -278,9 +277,9 @@ class GameEngine:
             total_movement = self._calculate_attack_movement(move.rider, move.cards)
             action_name = "Attack"
         elif move.action_type == ActionType.DRAFT:
-            # Draft: copy the movement from the last Pull move
-            if not self.state.last_move or self.state.last_move.get('action') not in ['Pull', 'TeamPull']:
-                return {'success': False, 'error': 'Cannot draft - no valid Pull move to follow'}
+            # Draft: copy the movement from the last Pull/Draft/TeamPull/TeamDraft move
+            if not self.state.last_move or self.state.last_move.get('action') not in ['Pull', 'Draft', 'TeamPull', 'TeamDraft']:
+                return {'success': False, 'error': 'Cannot draft - no valid move to follow'}
             total_movement = self.state.last_move.get('movement', 0)
             action_name = "Draft"
         elif move.action_type == ActionType.TEAM_PULL:
@@ -519,9 +518,9 @@ class GameEngine:
     
     def _execute_team_draft(self, move: Move, player: Player, old_position: int, old_terrain: str) -> dict:
         """Execute TeamDraft: Multiple riders draft together"""
-        # Get movement from last Pull/TeamPull
-        if not self.state.last_move or self.state.last_move.get('action') not in ['Pull', 'TeamPull']:
-            return {'success': False, 'error': 'Cannot draft - no valid Pull/TeamPull to follow'}
+        # Get movement from last Pull/Draft/TeamPull/TeamDraft
+        if not self.state.last_move or self.state.last_move.get('action') not in ['Pull', 'Draft', 'TeamPull', 'TeamDraft']:
+            return {'success': False, 'error': 'Cannot draft - no valid move to follow'}
         
         draft_movement = self.state.last_move.get('movement', 0)
         
