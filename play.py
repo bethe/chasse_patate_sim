@@ -32,7 +32,7 @@ def format_card(card: Card, terrain: TerrainType = None) -> str:
 
 def format_rider(rider: Rider) -> str:
     """Format a rider for display."""
-    return f"Rider {rider.rider_id} ({rider.rider_type.value}) @ pos {rider.position}"
+    return f"{rider.rider_type.value} @ pos {rider.position}"
 
 
 def format_hand(hand: List[Card], terrain: TerrainType = None) -> str:
@@ -42,7 +42,7 @@ def format_hand(hand: List[Card], terrain: TerrainType = None) -> str:
         key = card.card_type.value
         by_type.setdefault(key, []).append(card)
     lines = []
-    for ctype in ["Energy", "Rouleur", "Sprinter", "Climber"]:
+    for ctype in ["Energy", "Climber", "Rouleur", "Sprinter"]:
         cards = by_type.get(ctype, [])
         if cards:
             if terrain:
@@ -53,9 +53,17 @@ def format_hand(hand: List[Card], terrain: TerrainType = None) -> str:
     return "\n".join(lines) if lines else "  (empty)"
 
 
+CARD_SORT_ORDER = {
+    CardType.ENERGY: 0,
+    CardType.CLIMBER: 1,
+    CardType.ROULEUR: 2,
+    CardType.SPRINTER: 3,
+}
+
+
 def sort_cards(cards: List[Card]) -> List[Card]:
-    """Sort cards alphabetically by type name."""
-    return sorted(cards, key=lambda c: c.card_type.value)
+    """Sort cards: Energy first, then Climber, Rouleur, Sprinter."""
+    return sorted(cards, key=lambda c: CARD_SORT_ORDER.get(c.card_type, 99))
 
 
 def format_card_list(cards: List[Card], terrain: TerrainType = None,
@@ -104,7 +112,7 @@ def print_track(state: GameState):
     for player in state.players:
         for rider in player.riders:
             pos = rider.position
-            label = f"{player.player_id}{rider.rider_type.value[0].lower()}"
+            label = f"{player.player_id}{rider.rider_type.value[0]}"
             riders_by_pos.setdefault(pos, []).append(label)
 
     print("\n--- Track ---")
@@ -112,7 +120,7 @@ def print_track(state: GameState):
     # Legend
     legend_parts = [f"{sym}={name}" for sym, name in TERRAIN_SYMBOLS.values()]
     print(f"  Legend: {', '.join(legend_parts)}")
-    print(f"  Riders shown as <player><type>  (e.g. 0r = Player 0 Rouleur)")
+    print(f"  Riders shown as <player><type>  (e.g. 0R = Player 0 Rouleur)")
     print()
 
     for row_start in range(0, track_len, row_width):
@@ -203,8 +211,8 @@ def print_board(state: GameState):
         for rider in player.riders:
             tile = state.get_tile_at_position(rider.position)
             terrain = tile.terrain.value if tile else "?"
-            parts.append(f"R{rider.rider_id}({rider.rider_type.value[0]})@{rider.position}[{terrain}]")
-        print(f"  Player {player.player_id} ({player.name}): {', '.join(parts)}  | pts={player.points} hand={len(player.hand)}")
+            parts.append(f"{rider.rider_type.value}@{rider.position}[{terrain}]")
+        print(f"  P{player.player_id} {player.name}: {', '.join(parts)}  | pts={player.points} hand={len(player.hand)}")
     print(f"  Deck: {len(state.deck)}  Discard: {len(state.discard_pile)}")
     print()
 
@@ -577,7 +585,7 @@ def play_game():
 
     # Assign agent names to players
     for i, agent in enumerate(agents):
-        state.players[i].name = str(agent)
+        state.players[i].name = agent.name
 
     print(f"\n{'='*60}")
     print(f"  GAME START  ({num_players} players)")
