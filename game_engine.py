@@ -135,26 +135,28 @@ class GameEngine:
     
     def _get_draft_moves(self, rider: Rider, player: Player) -> List[Move]:
         """Generate draft moves for a rider
-        
+
         A rider can draft if:
         1. The last move was Pull, Draft, TeamPull, or TeamDraft
-        2. The last move was by a different player
+        2. The last move was by a different *rider* (same player is fine)
         3. The rider's current position matches the old_position of the last move
         """
         moves = []
-        
+
         # Check if there was a previous move
         if not self.state.last_move:
             return moves
-        
+
+        last_action = self.state.last_move.get('action')
         # Check if last move was one of the allowed types
-        if self.state.last_move.get('action') not in ['Pull', 'Draft', 'TeamPull', 'TeamDraft']:
+        if last_action not in ['Pull', 'Draft', 'TeamPull', 'TeamDraft']:
             return moves
-        
-        # Check if last move was by a different player
+
+        # Check if last move was by a different rider (not the same rider)
         last_rider_str = self.state.last_move.get('rider', '')  # e.g., "P0R1"
-        if last_rider_str.startswith(f'P{player.player_id}'):
-            return moves  # Can't draft from your own rider
+        this_rider_str = f'P{rider.player_id}R{rider.rider_id}'
+        if last_rider_str == this_rider_str:
+            return moves  # Can't draft from your own rider's move
         
         # Check if rider's current position matches the starting position of the last move
         last_old_position = self.state.last_move.get('old_position', -1)
@@ -218,7 +220,7 @@ class GameEngine:
 
         Requirements:
         - Multiple riders from same player at same position
-        - Last move was Pull, Draft, TeamPull, or TeamDraft by different player
+        - Last move was Pull, Draft, TeamPull, or TeamDraft by a different *rider*
         - Started from same position
         - All riders must be eligible (unmoved this round)
         """
@@ -233,16 +235,17 @@ class GameEngine:
         if last_action not in ['Pull', 'Draft', 'TeamPull', 'TeamDraft']:
             return moves
 
-        # Check if last move was by a different player
-        last_rider_str = self.state.last_move.get('rider', '')
-        if last_rider_str.startswith(f'P{player.player_id}'):
-            return moves
-
         # Find the starting position of the last move
         last_old_position = self.state.last_move.get('old_position', -1)
 
-        # Find all eligible riders at that position
-        eligible_riders = [r for r in riders_pool if r.position == last_old_position]
+        # Find all eligible riders at that position, excluding the rider that
+        # made the last move (a rider can't draft off its own move)
+        last_rider_str = self.state.last_move.get('rider', '')
+        eligible_riders = [
+            r for r in riders_pool
+            if r.position == last_old_position
+            and f'P{r.player_id}R{r.rider_id}' != last_rider_str
+        ]
         
         if len(eligible_riders) < 2:
             return moves  # Need at least 2 riders for TeamDraft

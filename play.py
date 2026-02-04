@@ -73,9 +73,131 @@ def format_card_list(cards: List[Card], terrain: TerrainType = None,
     return labels
 
 
+TERRAIN_SYMBOLS = {
+    TerrainType.FLAT: (".", "Flat"),
+    TerrainType.COBBLES: ("~", "Cobbles"),
+    TerrainType.CLIMB: ("^", "Climb"),
+    TerrainType.DESCENT: ("v", "Descent"),
+    TerrainType.SPRINT: ("S", "Sprint"),
+    TerrainType.FINISH: ("F", "Finish"),
+}
+
+# Player colour labels for the track (P0=0, P1=1, etc.)
+RIDER_LABELS = "0123456789"
+
+
+def print_track(state: GameState):
+    """Print a visual representation of the race track with rider positions.
+
+    The track is printed in rows of *row_width* fields.  Each field shows:
+      - A terrain symbol (see legend) when empty
+      - A rider label (player-id digit) when occupied
+    Sprint / finish fields are highlighted with brackets.
+    A small legend and tile separator markers keep things readable.
+    """
+
+    row_width = 20  # one row per tile (tiles are 20 fields)
+    track_len = len(state.track)
+
+    # Build a mapping: position -> list of (player_id, rider_type_initial)
+    riders_by_pos: dict[int, list[str]] = {}
+    for player in state.players:
+        for rider in player.riders:
+            pos = rider.position
+            label = f"{player.player_id}{rider.rider_type.value[0].lower()}"
+            riders_by_pos.setdefault(pos, []).append(label)
+
+    print("\n--- Track ---")
+
+    # Legend
+    legend_parts = [f"{sym}={name}" for sym, name in TERRAIN_SYMBOLS.values()]
+    print(f"  Legend: {', '.join(legend_parts)}")
+    print(f"  Riders shown as <player><type>  (e.g. 0r = Player 0 Rouleur)")
+    print()
+
+    for row_start in range(0, track_len, row_width):
+        row_end = min(row_start + row_width, track_len)
+
+        # Determine which tile this row belongs to
+        tile_num = row_start // 20 + 1
+
+        # --- Terrain line ---
+        terrain_cells = []
+        for pos in range(row_start, row_end):
+            tile = state.track[pos]
+            sym, _ = TERRAIN_SYMBOLS.get(tile.terrain, ("?", "?"))
+            if tile.sprint_points:
+                terrain_cells.append(f"[{sym}]")
+            else:
+                terrain_cells.append(f" {sym} ")
+        terrain_line = "".join(terrain_cells)
+
+        # --- Position number ruler (every 5 fields) ---
+        ruler_cells = []
+        for pos in range(row_start, row_end):
+            if pos % 5 == 0:
+                ruler_cells.append(f"{pos:<4}")
+            else:
+                ruler_cells.append("")
+        # Build ruler string manually to align with 3-char cells
+        ruler_line = ""
+        for pos in range(row_start, row_end):
+            if pos % 5 == 0:
+                num_str = str(pos)
+                ruler_line += num_str.ljust(3)
+            else:
+                ruler_line += "   "
+
+        # --- Rider line ---
+        rider_cells = []
+        for pos in range(row_start, row_end):
+            labels = riders_by_pos.get(pos, [])
+            if labels:
+                # Show up to 1 label per cell; overflow goes to extra line
+                rider_cells.append(f"{labels[0]:>3}")
+            else:
+                rider_cells.append("   ")
+
+        rider_line = "".join(rider_cells)
+
+        # Extra rider line if any position has >1 rider
+        extra_lines = []
+        max_stack = max((len(riders_by_pos.get(pos, [])) for pos in range(row_start, row_end)), default=0)
+        for layer in range(1, max_stack):
+            cells = []
+            for pos in range(row_start, row_end):
+                labels = riders_by_pos.get(pos, [])
+                if layer < len(labels):
+                    cells.append(f"{labels[layer]:>3}")
+                else:
+                    cells.append("   ")
+            extra_lines.append("".join(cells))
+
+        # Print the row
+        print(f"  Tile {tile_num}  (pos {row_start}-{row_end - 1})")
+        print(f"  {ruler_line}")
+        print(f"  {terrain_line}")
+        print(f"  {rider_line}")
+        for el in extra_lines:
+            print(f"  {el}")
+        print()
+
+    # Finished riders (beyond track)
+    finished = []
+    for player in state.players:
+        for rider in player.riders:
+            if rider.position >= track_len:
+                finished.append(f"P{player.player_id}R{rider.rider_id}({rider.rider_type.value[0]})")
+    if finished:
+        print(f"  Finished: {', '.join(finished)}")
+        print()
+
+
 def print_board(state: GameState):
-    """Print a compact view of all rider positions."""
-    print("\n--- Board ---")
+    """Print a compact view of all rider positions plus track visualization."""
+    print_track(state)
+
+    print("--- Scoreboard ---")
     for player in state.players:
         parts = []
         for rider in player.riders:
@@ -223,8 +345,20 @@ class HumanAgent(Agent):
     def _step_pick_action(self, engine, player, valid_moves, rider, terrain,
                           can_go_back: bool):
         """Pick an action for the chosen rider. Returns Move, None, or BACK."""
+        # Moves where this rider is the primary mover
         rider_moves = [m for m in valid_moves if m.rider == rider]
-        available_actions = sorted(set(m.action_type for m in rider_moves),
+
+        # For team actions (TeamDraft, TeamPull), the chosen rider might be a
+        # drafter rather than the primary rider.  Include those moves too.
+        team_moves_involving_rider = [
+            m for m in valid_moves
+            if m.action_type in (ActionType.TEAM_DRAFT, ActionType.TEAM_PULL)
+            and m.rider != rider
+            and rider in (m.drafting_riders or [])
+        ]
+
+        all_relevant = rider_moves + team_moves_involving_rider
+        available_actions = sorted(set(m.action_type for m in all_relevant),
                                    key=lambda a: a.value)
 
         while True:
@@ -235,7 +369,7 @@ class HumanAgent(Agent):
                 return self.BACK
 
             chosen_action = available_actions[action_idx]
-            filtered = [m for m in rider_moves if m.action_type == chosen_action]
+            filtered = [m for m in all_relevant if m.action_type == chosen_action]
 
             # --- Step 3: action-specific (can go back to action) -------
             result = self._step_pick_details(engine, player, chosen_action,
