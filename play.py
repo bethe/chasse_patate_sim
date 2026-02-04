@@ -53,6 +53,26 @@ def format_hand(hand: List[Card], terrain: TerrainType = None) -> str:
     return "\n".join(lines) if lines else "  (empty)"
 
 
+def sort_cards(cards: List[Card]) -> List[Card]:
+    """Sort cards alphabetically by type name."""
+    return sorted(cards, key=lambda c: c.card_type.value)
+
+
+def format_card_list(cards: List[Card], terrain: TerrainType = None,
+                     highlight_playable: List[Card] = None) -> List[str]:
+    """Format a list of cards as individually numbered labels, sorted alphabetically.
+
+    If highlight_playable is given, cards NOT in that list are marked as (not playable).
+    """
+    labels = []
+    for card in cards:
+        label = format_card(card, terrain)
+        if highlight_playable is not None and card not in highlight_playable:
+            label += "  [not playable]"
+        labels.append(label)
+    return labels
+
+
 def print_board(state: GameState):
     """Print a compact view of all rider positions."""
     print("\n--- Board ---")
@@ -121,16 +141,22 @@ def prompt_choice(prompt: str, options: list, allow_cancel: bool = False) -> int
         print("Invalid choice, try again.\n")
 
 
-def prompt_multi_choice(prompt: str, options: list, min_sel: int = 1, max_sel: int = None) -> List[int]:
-    """Ask user to pick multiple options (comma-separated). Returns list of indices."""
+def prompt_multi_choice(prompt: str, options: list, min_sel: int = 1,
+                        max_sel: int = None, allow_cancel: bool = False) -> Optional[List[int]]:
+    """Ask user to pick multiple options (comma-separated). Returns list of indices, or None if cancelled."""
     if max_sel is None:
         max_sel = len(options)
     while True:
         print(prompt)
         for i, option in enumerate(options):
             print(f"  [{i}] {option}")
-        print(f"  (select {min_sel}-{max_sel}, comma-separated)")
-        raw = input("> ").strip()
+        hint = f"  (select {min_sel}-{max_sel}, comma-separated)"
+        if allow_cancel:
+            hint += "  |  [b] go back"
+        print(hint)
+        raw = input("> ").strip().lower()
+        if allow_cancel and raw == "b":
+            return None
         try:
             indices = [int(x.strip()) for x in raw.split(",")]
             if min_sel <= len(indices) <= max_sel and all(0 <= i < len(options) for i in indices):
@@ -146,6 +172,8 @@ def prompt_multi_choice(prompt: str, options: list, min_sel: int = 1, max_sel: i
 
 class HumanAgent(Agent):
     """Interactive human player."""
+
+    BACK = "BACK"  # sentinel for go-back
 
     def __init__(self, player_id: int):
         super().__init__(player_id, "Human")
@@ -167,76 +195,115 @@ class HumanAgent(Agent):
         print(format_hand(player.hand, terrain))
         print()
 
-        # --- Step 1: pick action type -----------------------------------
-        available_actions = sorted(set(m.action_type for m in valid_moves),
+        # Step 1 -> Step 2 -> Step 3  (with go-back)
+        while True:
+            # --- Step 1: pick rider ------------------------------------
+            rider_set = sorted(set(m.rider for m in valid_moves),
+                               key=lambda r: r.rider_id)
+            if len(rider_set) == 1:
+                chosen_rider = rider_set[0]
+                print(f"  Rider: {format_rider(chosen_rider)}")
+            else:
+                rider_labels = [format_rider(r) for r in rider_set]
+                rider_idx = prompt_choice("Choose rider:", rider_labels)
+                chosen_rider = rider_set[rider_idx]
+
+            # --- Step 2: pick action (can go back to rider) ------------
+            result = self._step_pick_action(engine, player, valid_moves,
+                                            chosen_rider, terrain,
+                                            can_go_back=len(rider_set) > 1)
+            if result is self.BACK:
+                continue  # restart from rider selection
+            return result
+
+    # ------------------------------------------------------------------
+    # Step 2: pick action type
+    # ------------------------------------------------------------------
+
+    def _step_pick_action(self, engine, player, valid_moves, rider, terrain,
+                          can_go_back: bool):
+        """Pick an action for the chosen rider. Returns Move, None, or BACK."""
+        rider_moves = [m for m in valid_moves if m.rider == rider]
+        available_actions = sorted(set(m.action_type for m in rider_moves),
                                    key=lambda a: a.value)
-        action_labels = [a.value for a in available_actions]
-        action_idx = prompt_choice("Choose action:", action_labels)
-        chosen_action = available_actions[action_idx]
 
-        # Filter moves to chosen action
-        filtered = [m for m in valid_moves if m.action_type == chosen_action]
+        while True:
+            action_labels = [a.value for a in available_actions]
+            action_idx = prompt_choice("Choose action:", action_labels,
+                                       allow_cancel=can_go_back)
+            if action_idx == -1:
+                return self.BACK
 
-        # --- Step 2: pick rider ----------------------------------------
-        rider_set = sorted(set(m.rider for m in filtered),
-                           key=lambda r: r.rider_id)
-        if len(rider_set) == 1:
-            chosen_rider = rider_set[0]
-            print(f"  Rider: {format_rider(chosen_rider)}")
-        else:
-            rider_labels = [format_rider(r) for r in rider_set]
-            rider_idx = prompt_choice("Choose rider:", rider_labels)
-            chosen_rider = rider_set[rider_idx]
+            chosen_action = available_actions[action_idx]
+            filtered = [m for m in rider_moves if m.action_type == chosen_action]
 
-        filtered = [m for m in filtered if m.rider == chosen_rider]
+            # --- Step 3: action-specific (can go back to action) -------
+            result = self._step_pick_details(engine, player, chosen_action,
+                                             filtered, rider, terrain)
+            if result is self.BACK:
+                continue  # restart from action selection
+            return result
 
-        # --- Step 3: action-specific selection --------------------------
-        if chosen_action in (ActionType.DRAFT,):
-            # Draft: no further choice needed
+    # ------------------------------------------------------------------
+    # Step 3: action-specific details
+    # ------------------------------------------------------------------
+
+    def _step_pick_details(self, engine, player, action, filtered, rider, terrain):
+        """Handle the detail selection for a chosen action. Returns Move or BACK."""
+        if action == ActionType.DRAFT:
             return filtered[0]
 
-        if chosen_action == ActionType.TEAM_CAR:
-            return self._handle_team_car(engine, player, chosen_rider, terrain)
+        if action == ActionType.TEAM_CAR:
+            return self._handle_team_car(engine, player, rider, terrain)
 
-        if chosen_action == ActionType.TEAM_DRAFT:
-            return self._handle_team_draft(filtered, chosen_rider)
+        if action == ActionType.TEAM_DRAFT:
+            return self._handle_team_draft(filtered, rider)
 
-        if chosen_action == ActionType.TEAM_PULL:
-            return self._handle_team_pull(engine, player, filtered, chosen_rider, terrain)
+        if action == ActionType.TEAM_PULL:
+            return self._handle_team_pull(engine, player, filtered, rider, terrain)
 
         # Pull or Attack: pick cards
-        return self._handle_card_action(engine, player, chosen_action,
-                                        chosen_rider, terrain)
+        return self._handle_card_action(engine, player, action, rider, terrain)
 
     # ---- action handlers ------------------------------------------------
 
     def _handle_card_action(self, engine: GameEngine, player: Player,
                             action: ActionType, rider: Rider,
-                            terrain: TerrainType) -> Move:
-        """Handle Pull (1-3 cards) or Attack (exactly 3 cards)."""
-        playable = [c for c in player.hand if c.can_play_on_rider(rider.rider_type)]
-        card_labels = [format_card(c, terrain) for c in playable]
+                            terrain: TerrainType):
+        """Handle Pull (1-3 cards) or Attack (exactly 3 cards).
+        Shows all hand cards sorted alphabetically; unplayable cards are marked."""
+        hand_sorted = sort_cards(player.hand)
+        playable = [c for c in hand_sorted if c.can_play_on_rider(rider.rider_type)]
+        card_labels = format_card_list(hand_sorted, terrain, highlight_playable=playable)
 
         if action == ActionType.ATTACK:
             min_cards = max_cards = 3
         else:
             min_cards, max_cards = 1, min(3, len(playable))
 
-        indices = prompt_multi_choice(
-            f"Select {min_cards}-{max_cards} cards to play:",
-            card_labels, min_sel=min_cards, max_sel=max_cards)
-        chosen_cards = [playable[i] for i in indices]
+        while True:
+            indices = prompt_multi_choice(
+                f"Select {min_cards}-{max_cards} cards to play:",
+                card_labels, min_sel=min_cards, max_sel=max_cards,
+                allow_cancel=True)
+            if indices is None:
+                return self.BACK
 
-        mode = PlayMode.PULL if action == ActionType.PULL else PlayMode.ATTACK
-        total = sum(c.get_movement(terrain, mode) if not c.is_energy_card() else 1
-                    for c in chosen_cards)
-        print(f"  -> Total movement: {total}")
-        return Move(action, rider, chosen_cards)
+            chosen_cards = [hand_sorted[i] for i in indices]
+            # Validate all selected cards are playable
+            if any(c not in playable for c in chosen_cards):
+                print("  Some selected cards are not playable on this rider. Try again.\n")
+                continue
+
+            mode = PlayMode.PULL if action == ActionType.PULL else PlayMode.ATTACK
+            total = sum(c.get_movement(terrain, mode) if not c.is_energy_card() else 1
+                        for c in chosen_cards)
+            print(f"  -> Total movement: {total}")
+            return Move(action, rider, chosen_cards)
 
     def _handle_team_car(self, engine: GameEngine, player: Player,
-                         rider: Rider, terrain: TerrainType) -> Move:
+                         rider: Rider, terrain: TerrainType):
         """TeamCar: peek at deck, draw 2, let human pick discard."""
-        # Peek at the top 2 cards that will be drawn
         peek_cards = []
         for i in range(min(2, len(engine.state.deck))):
             peek_cards.append(engine.state.deck[-(i + 1)])
@@ -244,30 +311,34 @@ class HumanAgent(Agent):
         print(f"\n  Cards that will be drawn: "
               f"{', '.join(format_card(c, terrain) for c in peek_cards)}")
 
-        full_hand = list(player.hand) + peek_cards
-        card_labels = [format_card(c, terrain) for c in full_hand]
+        full_hand = sort_cards(list(player.hand) + peek_cards)
+        card_labels = format_card_list(full_hand, terrain)
         idx = prompt_choice("Pick a card to discard from your updated hand:",
-                            card_labels)
+                            card_labels, allow_cancel=True)
+        if idx == -1:
+            return self.BACK
         discard_card = full_hand[idx]
         return Move(ActionType.TEAM_CAR, rider, [discard_card])
 
-    def _handle_team_draft(self, filtered: List[Move], rider: Rider) -> Move:
+    def _handle_team_draft(self, filtered: List[Move], rider: Rider):
         """TeamDraft: pick which riders draft together."""
-        # Collect unique drafter combos
         combos = []
         for m in filtered:
             all_riders = [m.rider] + m.drafting_riders
             combo_label = ", ".join(format_rider(r) for r in all_riders)
             combos.append((combo_label, m))
         labels = [c[0] for c in combos]
-        idx = prompt_choice("Choose which riders draft together:", labels)
+        idx = prompt_choice("Choose which riders draft together:", labels,
+                            allow_cancel=True)
+        if idx == -1:
+            return self.BACK
         return combos[idx][1]
 
     def _handle_team_pull(self, engine: GameEngine, player: Player,
                           filtered: List[Move], rider: Rider,
-                          terrain: TerrainType) -> Move:
+                          terrain: TerrainType):
         """TeamPull: pick drafters, then pick cards for the pull."""
-        # Unique drafter sets (excluding the puller)
+        # Unique drafter sets
         drafter_sets = []
         seen = set()
         for m in filtered:
@@ -275,27 +346,43 @@ class HumanAgent(Agent):
             if key not in seen:
                 seen.add(key)
                 drafter_sets.append(m.drafting_riders)
-        if len(drafter_sets) == 1:
-            chosen_drafters = drafter_sets[0]
-            print(f"  Drafters: {', '.join(format_rider(r) for r in chosen_drafters)}")
-        else:
-            labels = [", ".join(format_rider(r) for r in ds) for ds in drafter_sets]
-            idx = prompt_choice("Choose drafting riders:", labels)
-            chosen_drafters = drafter_sets[idx]
 
-        # Now pick cards (same as Pull)
-        playable = [c for c in player.hand if c.can_play_on_rider(rider.rider_type)]
-        card_labels = [format_card(c, terrain) for c in playable]
-        min_cards, max_cards = 1, min(3, len(playable))
-        indices = prompt_multi_choice(
-            f"Select {min_cards}-{max_cards} cards for the pull:",
-            card_labels, min_sel=min_cards, max_sel=max_cards)
-        chosen_cards = [playable[i] for i in indices]
+        while True:
+            if len(drafter_sets) == 1:
+                chosen_drafters = drafter_sets[0]
+                print(f"  Drafters: {', '.join(format_rider(r) for r in chosen_drafters)}")
+            else:
+                labels = [", ".join(format_rider(r) for r in ds) for ds in drafter_sets]
+                idx = prompt_choice("Choose drafting riders:", labels,
+                                    allow_cancel=True)
+                if idx == -1:
+                    return self.BACK
+                chosen_drafters = drafter_sets[idx]
 
-        total = sum(c.get_movement(terrain, PlayMode.PULL) if not c.is_energy_card() else 1
-                    for c in chosen_cards)
-        print(f"  -> Total movement for all riders: {total}")
-        return Move(ActionType.TEAM_PULL, rider, chosen_cards, list(chosen_drafters))
+            # Pick cards (sorted hand, all shown)
+            hand_sorted = sort_cards(player.hand)
+            playable = [c for c in hand_sorted if c.can_play_on_rider(rider.rider_type)]
+            card_labels = format_card_list(hand_sorted, terrain, highlight_playable=playable)
+            min_cards, max_cards = 1, min(3, len(playable))
+
+            indices = prompt_multi_choice(
+                f"Select {min_cards}-{max_cards} cards for the pull:",
+                card_labels, min_sel=min_cards, max_sel=max_cards,
+                allow_cancel=True)
+            if indices is None:
+                if len(drafter_sets) == 1:
+                    return self.BACK  # can't re-pick drafters, go back to action
+                continue  # re-pick drafters
+
+            chosen_cards = [hand_sorted[i] for i in indices]
+            if any(c not in playable for c in chosen_cards):
+                print("  Some selected cards are not playable on this rider. Try again.\n")
+                continue
+
+            total = sum(c.get_movement(terrain, PlayMode.PULL) if not c.is_energy_card() else 1
+                        for c in chosen_cards)
+            print(f"  -> Total movement for all riders: {total}")
+            return Move(ActionType.TEAM_PULL, rider, chosen_cards, list(chosen_drafters))
 
     # ---- helpers --------------------------------------------------------
 
