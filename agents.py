@@ -6,7 +6,7 @@ Different AI strategies for testing game balance
 from abc import ABC, abstractmethod
 from typing import List, Optional
 import random
-from game_state import Player, Card, CardType, TerrainType, PlayMode, ActionType
+from game_state import Player, Card, CardType, TerrainType, PlayMode, ActionType, Rider
 from game_engine import GameEngine, Move
 
 
@@ -115,8 +115,15 @@ class Agent(ABC):
         self.name = name
     
     @abstractmethod
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
-        """Choose a move given the current game state"""
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
+        """Choose a move given the current game state.
+
+        Args:
+            engine: The game engine
+            player: The current player
+            eligible_riders: Riders that can move this turn (unmoved this round).
+                            If None, all riders are eligible (backward compat).
+        """
         pass
     
     def __str__(self):
@@ -129,9 +136,9 @@ class RandomAgent(Agent):
     def __init__(self, player_id: int):
         super().__init__(player_id, "Random")
     
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Choose a random valid move"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         return random.choice(valid_moves)
@@ -143,9 +150,9 @@ class GreedyAgent(Agent):
     def __init__(self, player_id: int):
         super().__init__(player_id, "Greedy")
     
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Choose action that maximizes total advancement (distance × number of riders)"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -179,9 +186,9 @@ class LeadRiderAgent(Agent):
     def __init__(self, player_id: int):
         super().__init__(player_id, "LeadRider")
     
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Advance the leading rider, prioritizing drafts over TeamCar when low on cards"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -222,9 +229,9 @@ class BalancedAgent(Agent):
     def __init__(self, player_id: int):
         super().__init__(player_id, "Balanced")
     
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Move the most behind rider, prioritizing drafts over TeamCar when low on cards"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -249,14 +256,16 @@ class BalancedAgent(Agent):
         
         # Filter moves for behind rider (excluding TeamCar)
         behind_moves = [m for m in valid_moves if m.rider == behind_rider and m.action_type != ActionType.TEAM_CAR]
-        if not behind_moves:
-            # If no moves available, take best move overall
-            non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
-            if non_team_car:
-                return max(non_team_car, key=lambda m: calculate_move_distance(engine, m))
-        
-        # Pick move that advances behind rider most
-        return max(behind_moves, key=lambda m: calculate_move_distance(engine, m))
+        if behind_moves:
+            return max(behind_moves, key=lambda m: calculate_move_distance(engine, m))
+
+        # If no moves for behind rider, take best move overall
+        non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
+        if non_team_car:
+            return max(non_team_car, key=lambda m: calculate_move_distance(engine, m))
+
+        # Fallback to any available move
+        return valid_moves[0]
 
 
 class SprintHunterAgent(Agent):
@@ -265,9 +274,9 @@ class SprintHunterAgent(Agent):
     def __init__(self, player_id: int):
         super().__init__(player_id, "SprintHunter")
     
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Prioritize reaching sprint points"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -295,9 +304,9 @@ class ConservativeAgent(Agent):
     def __init__(self, player_id: int):
         super().__init__(player_id, "Conservative")
     
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Choose conservative moves"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -311,9 +320,9 @@ class AggressiveAgent(Agent):
     def __init__(self, player_id: int):
         super().__init__(player_id, "Aggressive")
     
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Prefer moves for maximum advancement"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -328,9 +337,9 @@ class CardTypeAgent(Agent):
         super().__init__(player_id, f"{preferred_type.value}Focus")
         self.preferred_type = preferred_type
     
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Prefer playing cards of the preferred type"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -352,9 +361,9 @@ class AdaptiveAgent(Agent):
     def __init__(self, player_id: int):
         super().__init__(player_id, "Adaptive")
     
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Adapt strategy based on upcoming terrain, prioritizing drafts over TeamCar when low on cards"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -432,12 +441,12 @@ class WheelsuckerAgent(Agent):
     def __init__(self, player_id: int):
         super().__init__(player_id, "Wheelsucker")
     
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Prioritize drafting, then positioning for drafts, then TeamCar
         
         Only chooses draft/pull moves if total_advancement > 0
         """
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         

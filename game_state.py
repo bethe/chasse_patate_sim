@@ -4,7 +4,7 @@ Handles all game state, cards, and rules
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Tuple
 from enum import Enum
 import random
 
@@ -261,9 +261,12 @@ class GameState:
         self.tile_config = tile_config
         self.track_length = len(tile_config) * 20  # Each tile is 20 fields
         
-        self.current_turn = 0
+        self.current_round = 0
         self.current_player_idx = 0
         self.game_over = False
+        self.riders_moved_this_round: Set = set()
+        self.players_acted_at_position: Dict[int, Set[int]] = {}  # position -> set of player_ids that have acted
+        self.el_patron: int = 0  # Player 0 is El Patron in round 1
         
         # Initialize players
         self.players = [Player(i, f"Player {i}") for i in range(num_players)]
@@ -426,40 +429,139 @@ class GameState:
         
         return card
     
-    def advance_turn(self):
-        """Move to next player's turn"""
-        self.current_player_idx = (self.current_player_idx + 1) % self.num_players
-        if self.current_player_idx == 0:
-            self.current_turn += 1
+    def start_new_round(self):
+        """Begin a new round, clearing moved-riders tracking."""
+        self.riders_moved_this_round.clear()
+        self.players_acted_at_position.clear()
+        self.current_round += 1
+        self.last_move = None
+        # Rotate El Patron to the next player (except for round 1)
+        if self.current_round > 1:
+            self.el_patron = (self.el_patron + 1) % self.num_players
+        # Auto-mark finished riders as moved (they can't move further)
+        finish_pos = self.track_length - 1
+        for player in self.players:
+            for rider in player.riders:
+                if rider.position >= finish_pos:
+                    self.riders_moved_this_round.add(rider)
+
+    def _player_order_key(self, player_id: int) -> int:
+        """Return a sort key for player_id based on El Patron round-robin order.
+
+        El Patron goes first, then subsequent players wrap around.
+        E.g. with 3 players and el_patron=2: order is 2, 0, 1 -> keys 0, 1, 2.
+        """
+        return (player_id - self.el_patron) % self.num_players
+
+    def get_unmoved_riders(self) -> List:
+        """Get all riders that haven't moved this round, sorted by position descending,
+        with ties broken by El Patron round-robin order, then rider_id ascending."""
+        unmoved = []
+        for player in self.players:
+            for rider in player.riders:
+                if rider not in self.riders_moved_this_round:
+                    unmoved.append(rider)
+        # Sort: highest position first, then El Patron order, then lowest rider_id
+        unmoved.sort(key=lambda r: (-r.position, self._player_order_key(r.player_id), r.rider_id))
+        return unmoved
+
+    def mark_riders_moved(self, riders: List, acted_position: int = None):
+        """Mark multiple riders as having moved this round.
+
+        Args:
+            riders: The riders to mark as moved.
+            acted_position: If provided, record that these riders' player acted at this position
+                           (used for tie-breaking when multiple players share a position).
+        """
+        for rider in riders:
+            self.riders_moved_this_round.add(rider)
+            if acted_position is not None:
+                if acted_position not in self.players_acted_at_position:
+                    self.players_acted_at_position[acted_position] = set()
+                self.players_acted_at_position[acted_position].add(rider.player_id)
+
+    def determine_next_turn(self) -> Optional[Tuple]:
+        """Determine whose turn it is and which rider(s) they can move.
+
+        Returns (player, eligible_riders) or None if round is over.
+
+        Rules:
+        - Most advanced unmoved rider goes first
+        - If tied position, different players: El Patron moves first, then
+          subsequent players in round-robin order. Once a player makes a move
+          at a position, the turn passes to the next player before that player
+          can move again at the same position.
+        - If tied position, same player: that player picks among their riders there
+        """
+        unmoved = self.get_unmoved_riders()
+        if not unmoved:
+            return None  # round is complete
+
+        top_position = unmoved[0].position
+
+        # Get all unmoved riders at the top position, grouped by player
+        riders_at_top = [r for r in unmoved if r.position == top_position]
+
+        # Find which players haven't acted yet at this position
+        acted_here = self.players_acted_at_position.get(top_position, set())
+        players_not_yet_acted = []
+        for r in riders_at_top:
+            if r.player_id not in acted_here and r.player_id not in players_not_yet_acted:
+                players_not_yet_acted.append(r.player_id)
+
+        if players_not_yet_acted:
+            # Pick the first player (by player_id order, which is preserved by sorting)
+            next_player_id = players_not_yet_acted[0]
+        else:
+            # All players have acted once at this position — reset and start over
+            # (allows players with remaining riders to take further turns)
+            if top_position in self.players_acted_at_position:
+                self.players_acted_at_position[top_position].clear()
+            next_player_id = riders_at_top[0].player_id
+
+        next_player = self.players[next_player_id]
+
+        # Eligible riders: this player's unmoved riders at the top position
+        eligible_riders = [r for r in riders_at_top if r.player_id == next_player_id]
+
+        self.current_player_idx = next_player_id
+        return (next_player, eligible_riders)
     
     def check_game_over(self) -> bool:
-        """Check if game is over based on two conditions:
+        """Check if game is over based on three conditions:
         1. Five riders have reached the finish line
-        2. All players have run out of cards (and deck is empty)
+        2. One player has all 3 riders at the finish
+        3. All players have run out of cards (and deck is empty)
         """
         try:
-            # Condition 1: Check if 5 riders have finished
             finish_position = int(self.track_length - 1)
+
+            # Condition 1 & 2: Check finished riders
             riders_finished = 0
-            
             for player in self.players:
+                player_finished = 0
                 for rider in player.riders:
-                    # Ensure position is an integer and valid
                     rider_pos = int(rider.position) if rider.position is not None else 0
                     if rider_pos >= finish_position:
                         riders_finished += 1
-            
+                        player_finished += 1
+                # Condition 2: One player has all 3 riders finished
+                if player_finished >= 3:
+                    self.game_over = True
+                    return True
+
+            # Condition 1: 5 riders total finished
             if riders_finished >= 5:
                 self.game_over = True
                 return True
-            
-            # Condition 2: Check if all players are out of cards and deck is empty
+
+            # Condition 3: Check if all players are out of cards and deck is empty
             if len(self.deck) == 0:
                 all_players_empty = all(len(player.hand) == 0 for player in self.players)
                 if all_players_empty:
                     self.game_over = True
                     return True
-            
+
             return False
             
         except Exception as e:
@@ -478,12 +580,18 @@ class GameState:
                              for rider in player.riders 
                              if rider.position >= finish_position)
         
+        # Check if one player has all 3 riders finished
+        for player in self.players:
+            player_finished = sum(1 for r in player.riders if r.position >= finish_position)
+            if player_finished >= 3:
+                return f"team_fully_finished (Player {player.player_id} has all 3 riders at finish)"
+
         if riders_finished >= 5:
             return f"5_riders_finished ({riders_finished} riders at finish)"
-        
+
         if len(self.deck) == 0 and all(len(p.hand) == 0 for p in self.players):
             return "players_out_of_cards"
-        
+
         return "unknown"
     
     def get_game_summary(self) -> Dict:
@@ -501,7 +609,8 @@ class GameState:
                 }
         
         return {
-            'turn': self.current_turn,
+            'round': self.current_round,
+            'el_patron': self.el_patron,
             'current_player': self.current_player_idx,
             'player_scores': [p.points for p in self.players],
             'player_hand_sizes': [len(p.hand) for p in self.players],
