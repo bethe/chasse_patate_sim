@@ -132,6 +132,31 @@ class GameAnalyzer:
         
         return pd.DataFrame(results).sort_values('usage_rate', ascending=False)
     
+    def analyze_action_usage(self, logs: List[Dict]) -> Dict:
+        """Analyze which actions are used most frequently"""
+        from collections import Counter
+        
+        action_counts = Counter()
+        total_moves = 0
+        
+        for log in logs:
+            for turn in log['move_history']:
+                if turn['move']['success']:
+                    action = turn['move'].get('action', 'unknown')
+                    action_counts[action] += 1
+                    total_moves += 1
+        
+        # Create results with percentages
+        results = {}
+        for action, count in action_counts.most_common():
+            results[action] = {
+                'count': count,
+                'percentage': (count / total_moves * 100) if total_moves > 0 else 0
+            }
+        
+        results['total_moves'] = total_moves
+        return results
+    
     
     def analyze_score_distribution(self, logs: List[Dict]) -> Dict:
         """Analyze score distributions"""
@@ -205,6 +230,18 @@ class GameAnalyzer:
         report_lines.append("-" * 80)
         card_usage = self.analyze_card_usage(logs)
         report_lines.append(card_usage.to_string())
+        report_lines.append("")
+        
+        # Action usage
+        report_lines.append("-" * 80)
+        report_lines.append("ACTION USAGE STATISTICS")
+        report_lines.append("-" * 80)
+        action_usage = self.analyze_action_usage(logs)
+        total_moves = action_usage.pop('total_moves', 0)
+        report_lines.append(f"Total moves analyzed: {total_moves}")
+        report_lines.append("")
+        for action, stats in sorted(action_usage.items(), key=lambda x: x[1]['count'], reverse=True):
+            report_lines.append(f"{action:12s}: {stats['count']:5d} moves ({stats['percentage']:5.1f}%)")
         report_lines.append("")
         
         # Score distribution
