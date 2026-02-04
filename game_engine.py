@@ -10,19 +10,29 @@ from game_state import GameState, Player, Rider, Card, TerrainType, CardType, Pl
 
 @dataclass
 class Move:
-    """Represents a player's action (Pull, Attack, Draft, or TeamCar)"""
+    """Represents a player's action (Pull, Attack, Draft, TeamCar, TeamPull, TeamDraft)"""
     action_type: ActionType
-    rider: Rider
-    cards: List[Card]  # 1-3 cards for Pull/Attack, 1 card for TeamCar (card to discard), empty for Draft
+    rider: Rider  # Primary rider (for Pull, Attack, Draft, TeamCar) or lead rider (for TeamPull, TeamDraft)
+    cards: List[Card]  # 1-3 cards for Pull/Attack, 1 card for TeamCar (card to discard), empty for Draft/TeamDraft
+    drafting_riders: List[Rider] = None  # For TeamPull and TeamDraft: additional riders that draft
     
     def __post_init__(self):
         """Validate the move"""
+        if self.drafting_riders is None:
+            self.drafting_riders = []
+            
         if self.action_type == ActionType.PULL:
             assert 1 <= len(self.cards) <= 3, "Pull requires 1-3 cards"
         elif self.action_type == ActionType.ATTACK:
             assert len(self.cards) == 3, "Attack requires exactly 3 cards"
         elif self.action_type == ActionType.TEAM_CAR:
             assert len(self.cards) <= 1, "Team Car can specify 0 or 1 card to discard"
+        elif self.action_type == ActionType.TEAM_PULL:
+            assert 1 <= len(self.cards) <= 3, "TeamPull requires 1-3 cards for the pull"
+            assert len(self.drafting_riders) >= 1, "TeamPull requires at least 1 drafting rider"
+        elif self.action_type == ActionType.TEAM_DRAFT:
+            assert len(self.cards) == 0, "TeamDraft does not use cards"
+            assert len(self.drafting_riders) >= 1, "TeamDraft requires at least 1 additional drafting rider"
 
 
 class GameEngine:
@@ -32,7 +42,7 @@ class GameEngine:
         self.state = game_state
     
     def get_valid_moves(self, player: Player) -> List[Move]:
-        """Get all valid actions (Pull, Attack, Draft, TeamCar) for a player"""
+        """Get all valid actions (Pull, Attack, Draft, TeamCar, TeamPull, TeamDraft) for a player"""
         valid_moves = []
         
         # Generate moves for each rider
@@ -48,6 +58,14 @@ class GameEngine:
             # DRAFT actions (follow another rider's Pull move)
             draft_moves = self._get_draft_moves(rider, player)
             valid_moves.extend(draft_moves)
+        
+        # TEAM PULL actions (Pull + teammates draft)
+        team_pull_moves = self._get_team_pull_moves(player)
+        valid_moves.extend(team_pull_moves)
+        
+        # TEAM DRAFT actions (multiple riders draft together)
+        team_draft_moves = self._get_team_draft_moves(player)
+        valid_moves.extend(team_draft_moves)
         
         # TEAM CAR action (available once per turn, not per rider)
         # Player draws 2 cards, then discards 1 card of their choice
@@ -143,6 +161,97 @@ class GameEngine:
         
         return moves
     
+    def _get_team_pull_moves(self, player: Player) -> List[Move]:
+        """Generate TeamPull moves where one rider pulls and teammates draft
+        
+        Requirements:
+        - Multiple riders from same player at same position
+        - One rider does Pull, others can draft
+        """
+        moves = []
+        
+        # Group riders by position
+        riders_by_position = {}
+        for rider in player.riders:
+            pos = rider.position
+            if pos not in riders_by_position:
+                riders_by_position[pos] = []
+            riders_by_position[pos].append(rider)
+        
+        # Find positions with multiple riders
+        for position, riders_at_pos in riders_by_position.items():
+            if len(riders_at_pos) < 2:
+                continue  # Need at least 2 riders for TeamPull
+            
+            # Try each rider as the puller
+            for puller_idx, puller in enumerate(riders_at_pos):
+                # Get valid pull cards for this rider
+                pull_moves = self._get_pull_moves(puller, player)
+                
+                # For each valid pull combination
+                for pull_move in pull_moves:
+                    # Other riders at same position can draft
+                    potential_drafters = [r for i, r in enumerate(riders_at_pos) if i != puller_idx]
+                    
+                    # Generate all possible combinations of drafting riders (1 to all)
+                    from itertools import combinations
+                    for r in range(1, len(potential_drafters) + 1):
+                        for drafting_combo in combinations(potential_drafters, r):
+                            moves.append(Move(
+                                ActionType.TEAM_PULL,
+                                puller,
+                                pull_move.cards,
+                                list(drafting_combo)
+                            ))
+        
+        return moves
+    
+    def _get_team_draft_moves(self, player: Player) -> List[Move]:
+        """Generate TeamDraft moves where multiple riders draft together
+        
+        Requirements:
+        - Multiple riders from same player at same position
+        - Last move was Pull or TeamPull by different player
+        - Started from same position
+        """
+        moves = []
+        
+        # Check if there was a previous move that was Pull or TeamPull
+        if not self.state.last_move:
+            return moves
+        
+        last_action = self.state.last_move.get('action')
+        if last_action not in ['Pull', 'TeamPull']:
+            return moves
+        
+        # Check if last move was by a different player
+        last_rider_str = self.state.last_move.get('rider', '')
+        if last_rider_str.startswith(f'P{player.player_id}'):
+            return moves
+        
+        # Find the starting position of the last Pull/TeamPull
+        last_old_position = self.state.last_move.get('old_position', -1)
+        
+        # Find all player's riders at that position
+        eligible_riders = [r for r in player.riders if r.position == last_old_position]
+        
+        if len(eligible_riders) < 2:
+            return moves  # Need at least 2 riders for TeamDraft
+        
+        # Generate all combinations of 2 or more riders
+        from itertools import combinations
+        for r in range(2, len(eligible_riders) + 1):
+            for drafting_combo in combinations(eligible_riders, r):
+                # Use first rider as primary, rest as drafting_riders
+                moves.append(Move(
+                    ActionType.TEAM_DRAFT,
+                    drafting_combo[0],
+                    [],
+                    list(drafting_combo[1:])
+                ))
+        
+        return moves
+    
     def _is_valid_position(self, position: int) -> bool:
         """Check if a position is valid on the track"""
         return 0 <= position < self.state.track_length
@@ -170,10 +279,16 @@ class GameEngine:
             action_name = "Attack"
         elif move.action_type == ActionType.DRAFT:
             # Draft: copy the movement from the last Pull move
-            if not self.state.last_move or self.state.last_move.get('action') != 'Pull':
+            if not self.state.last_move or self.state.last_move.get('action') not in ['Pull', 'TeamPull']:
                 return {'success': False, 'error': 'Cannot draft - no valid Pull move to follow'}
             total_movement = self.state.last_move.get('movement', 0)
             action_name = "Draft"
+        elif move.action_type == ActionType.TEAM_PULL:
+            # TeamPull: Execute Pull for lead rider, then draft for teammates
+            return self._execute_team_pull(move, player, old_position, old_terrain)
+        elif move.action_type == ActionType.TEAM_DRAFT:
+            # TeamDraft: Multiple riders draft together
+            return self._execute_team_draft(move, player, old_position, old_terrain)
         elif move.action_type == ActionType.TEAM_CAR:
             # Team Car: Draw 2 cards, discard 1 card
             result = self._execute_team_car(move, player, old_position, old_terrain)
@@ -341,6 +456,114 @@ class GameEngine:
             'points_earned': 0,
             'checkpoints_reached': None
         }
+    
+    def _execute_team_pull(self, move: Move, player: Player, old_position: int, old_terrain: str) -> dict:
+        """Execute TeamPull: Lead rider pulls, teammates draft"""
+        # Calculate pull movement for lead rider
+        pull_movement = self._calculate_pull_movement(move.rider, move.cards)
+        
+        # Move lead rider
+        new_position = min(old_position + pull_movement, self.state.track_length - 1)
+        move.rider.position = new_position
+        
+        new_tile = self.state.get_tile_at_position(new_position)
+        new_terrain = new_tile.terrain.value if new_tile else "Unknown"
+        
+        # Remove cards from hand
+        for card in move.cards:
+            player.hand.remove(card)
+            self.state.discard_pile.append(card)
+        
+        # Move drafting riders the same distance
+        drafting_results = []
+        for drafter in move.drafting_riders:
+            drafter_old_pos = drafter.position
+            drafter_new_pos = min(drafter_old_pos + pull_movement, self.state.track_length - 1)
+            drafter.position = drafter_new_pos
+            drafting_results.append({
+                'rider': f"P{drafter.player_id}R{drafter.rider_id}",
+                'old_position': drafter_old_pos,
+                'new_position': drafter_new_pos
+            })
+        
+        # Check sprint points and checkpoints for lead rider only (simplified)
+        points_earned = 0
+        for pos in range(old_position + 1, new_position + 1):
+            points = self._check_sprint_scoring(move.rider, pos)
+            points_earned += points
+        
+        if points_earned > 0:
+            player.points += points_earned
+        
+        result = {
+            'success': True,
+            'action': 'TeamPull',
+            'rider': f"P{move.rider.player_id}R{move.rider.rider_id}",
+            'rider_type': move.rider.rider_type.value,
+            'old_position': old_position,
+            'old_terrain': old_terrain,
+            'new_position': new_position,
+            'new_terrain': new_terrain,
+            'cards_played': [c.card_type.value for c in move.cards],
+            'num_cards': len(move.cards),
+            'movement': pull_movement,
+            'points_earned': points_earned,
+            'drafting_riders': drafting_results,
+            'checkpoints_reached': None,
+            'cards_drawn': 0
+        }
+        
+        # Store for potential drafting
+        self.state.last_move = result
+        return result
+    
+    def _execute_team_draft(self, move: Move, player: Player, old_position: int, old_terrain: str) -> dict:
+        """Execute TeamDraft: Multiple riders draft together"""
+        # Get movement from last Pull/TeamPull
+        if not self.state.last_move or self.state.last_move.get('action') not in ['Pull', 'TeamPull']:
+            return {'success': False, 'error': 'Cannot draft - no valid Pull/TeamPull to follow'}
+        
+        draft_movement = self.state.last_move.get('movement', 0)
+        
+        # Move all riders (primary + drafting_riders)
+        all_drafting_riders = [move.rider] + move.drafting_riders
+        drafting_results = []
+        
+        for drafter in all_drafting_riders:
+            drafter_old_pos = drafter.position
+            drafter_new_pos = min(drafter_old_pos + draft_movement, self.state.track_length - 1)
+            drafter.position = drafter_new_pos
+            drafting_results.append({
+                'rider': f"P{drafter.player_id}R{drafter.rider_id}",
+                'old_position': drafter_old_pos,
+                'new_position': drafter_new_pos
+            })
+        
+        new_position = move.rider.position
+        new_tile = self.state.get_tile_at_position(new_position)
+        new_terrain = new_tile.terrain.value if new_tile else "Unknown"
+        
+        result = {
+            'success': True,
+            'action': 'TeamDraft',
+            'rider': f"P{move.rider.player_id}R{move.rider.rider_id}",
+            'rider_type': move.rider.rider_type.value,
+            'old_position': old_position,
+            'old_terrain': old_terrain,
+            'new_position': new_position,
+            'new_terrain': new_terrain,
+            'cards_played': [],
+            'num_cards': 0,
+            'movement': draft_movement,
+            'points_earned': 0,
+            'drafting_riders': drafting_results,
+            'checkpoints_reached': None,
+            'cards_drawn': 0
+        }
+        
+        # Store for potential future drafting
+        self.state.last_move = result
+        return result
     
     def _check_sprint_scoring(self, rider: Rider, position: int) -> int:
         """Check if rider scores points at a sprint
