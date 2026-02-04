@@ -19,6 +19,40 @@ def calculate_move_distance(engine: GameEngine, move: Move) -> int:
     return 0
 
 
+def calculate_total_advancement(engine: GameEngine, move: Move) -> int:
+    """Calculate total advancement for all riders affected by a move
+    
+    For single rider moves (Pull, Attack, Draft): returns distance moved
+    For team moves (TeamPull, TeamDraft): returns distance × number of riders
+    For TeamCar: returns 0 (no advancement)
+    """
+    if move.action_type == ActionType.PULL:
+        return engine._calculate_pull_movement(move.rider, move.cards)
+    elif move.action_type == ActionType.ATTACK:
+        return engine._calculate_attack_movement(move.rider, move.cards)
+    elif move.action_type == ActionType.DRAFT:
+        # Draft copies movement from last move
+        if engine.state.last_move:
+            return engine.state.last_move.get('movement', 0)
+        return 0
+    elif move.action_type == ActionType.TEAM_PULL:
+        # TeamPull: lead rider + all drafting riders move same distance
+        distance = engine._calculate_pull_movement(move.rider, move.cards)
+        num_riders = 1 + len(move.drafting_riders)  # lead + drafters
+        return distance * num_riders
+    elif move.action_type == ActionType.TEAM_DRAFT:
+        # TeamDraft: all riders move same distance
+        if engine.state.last_move:
+            distance = engine.state.last_move.get('movement', 0)
+            num_riders = 1 + len(move.drafting_riders)  # primary + drafters
+            return distance * num_riders
+        return 0
+    elif move.action_type == ActionType.TEAM_CAR:
+        return 0  # No advancement
+    
+    return 0
+
+
 def should_use_team_car(player: Player, valid_moves: List[Move], hand_threshold: int = 3) -> bool:
     """Helper function to determine if agent should use Team Car
     
@@ -104,13 +138,13 @@ class RandomAgent(Agent):
 
 
 class GreedyAgent(Agent):
-    """Agent that always plays for maximum immediate advancement"""
+    """Agent that always plays for maximum total advancement across all riders"""
     
     def __init__(self, player_id: int):
         super().__init__(player_id, "Greedy")
     
     def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
-        """Choose action that advances furthest, prioritizing drafts over TeamCar when low on cards"""
+        """Choose action that maximizes total advancement (distance × number of riders)"""
         valid_moves = engine.get_valid_moves(player)
         if not valid_moves:
             return None
@@ -131,10 +165,11 @@ class GreedyAgent(Agent):
                         team_car_moves[0].cards = [worst_card]
                     return team_car_moves[0]
         
-        # Otherwise return move with maximum distance
+        # Calculate total advancement for all moves and choose maximum
+        # This considers both distance and number of riders moved
         non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
         if non_team_car:
-            return max(non_team_car, key=lambda m: calculate_move_distance(engine, m))
+            return max(non_team_car, key=lambda m: calculate_total_advancement(engine, m))
         return valid_moves[0]
 
 
