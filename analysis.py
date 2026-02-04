@@ -46,6 +46,14 @@ class GameAnalyzer:
             final_scores = log['final_result']['final_scores']
             winner = log['final_result']['winner']
             
+            # Extract player name from winner string (format: "AgentType (Player X)")
+            # Winner might be "Player 0" or "AgentType (Player 0)"
+            if '(' in winner:
+                # Extract "Player X" from "AgentType (Player X)"
+                winner_player = winner.split('(')[1].split(')')[0]
+            else:
+                winner_player = winner
+            
             # Extract scores and determine positions
             player_scores = [(name, score) for name, score in final_scores.items()]
             player_scores.sort(key=lambda x: x[1], reverse=True)
@@ -63,7 +71,7 @@ class GameAnalyzer:
                 agent_stats[agent_type]['total_score'] += score
                 agent_stats[agent_type]['positions'].append(position)
                 
-                if winner == player_name:
+                if winner_player == player_name:
                     agent_stats[agent_type]['wins'] += 1
         
         # Create DataFrame
@@ -157,6 +165,31 @@ class GameAnalyzer:
         results['total_moves'] = total_moves
         return results
     
+    def analyze_game_over_reasons(self, logs: List[Dict]) -> Dict:
+        """Analyze why games ended"""
+        from collections import Counter
+        
+        reason_counts = Counter()
+        total_games = len(logs)
+        
+        for log in logs:
+            reason = log['final_result'].get('game_over_reason', 'unknown')
+            # Handle None values
+            if reason is None:
+                reason = 'unknown'
+            reason_counts[reason] += 1
+        
+        # Create results with percentages
+        results = {}
+        for reason, count in reason_counts.most_common():
+            results[reason] = {
+                'count': count,
+                'percentage': (count / total_games * 100) if total_games > 0 else 0
+            }
+        
+        results['total_games'] = total_games
+        return results
+    
     
     def analyze_score_distribution(self, logs: List[Dict]) -> Dict:
         """Analyze score distributions"""
@@ -222,6 +255,18 @@ class GameAnalyzer:
         length_stats = self.analyze_game_length(logs)
         for key, value in length_stats.items():
             report_lines.append(f"{key}: {value:.2f}")
+        report_lines.append("")
+        
+        # Game over reasons
+        report_lines.append("-" * 80)
+        report_lines.append("GAME OVER REASONS")
+        report_lines.append("-" * 80)
+        game_over_reasons = self.analyze_game_over_reasons(logs)
+        total_games = game_over_reasons.pop('total_games', 0)
+        report_lines.append(f"Total games: {total_games}")
+        report_lines.append("")
+        for reason, stats in sorted(game_over_reasons.items(), key=lambda x: x[1]['count'], reverse=True):
+            report_lines.append(f"{reason:30s}: {stats['count']:3d} games ({stats['percentage']:5.1f}%)")
         report_lines.append("")
         
         # Card usage
