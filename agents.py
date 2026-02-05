@@ -148,7 +148,7 @@ class GreedyAgent(Agent):
     """Agent that always plays for maximum total advancement across all riders"""
 
     def __init__(self, player_id: int):
-        super().__init__(player_id, "Greedy")
+        super().__init__(player_id, "Marc Soler")
 
     def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Choose action that maximizes total advancement (distance × number of riders)"""
