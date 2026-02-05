@@ -144,7 +144,7 @@ class RandomAgent(Agent):
         return random.choice(valid_moves)
 
 
-class GreedyAgent(Agent):
+class MarcSolerAgent(Agent):
     """Agent that always plays for maximum total advancement across all riders"""
 
     def __init__(self, player_id: int):
@@ -953,7 +953,7 @@ def create_agent(agent_type: str, player_id: int) -> Agent:
     """Create an agent of the specified type"""
     agent_map = {
         'random': RandomAgent,
-        'greedy': GreedyAgent,
+        'marc_soler': MarcSolerAgent,
         'lead_rider': LeadRiderAgent,
         'balanced': BalancedAgent,
         'sprint_hunter': SprintHunterAgent,
@@ -977,7 +977,7 @@ def create_agent(agent_type: str, player_id: int) -> Agent:
 def get_available_agents() -> List[str]:
     """Get list of all available agent types"""
     return [
-        'random', 'greedy', 'lead_rider', 'balanced',
+        'random', 'marc_soler', 'lead_rider', 'balanced',
         'sprint_hunter', 'conservative', 'aggressive', 'adaptive',
         'wheelsucker', 'gemini', 'claudebot',
         'rouleur_focus', 'sprinter_focus', 'climber_focus'
