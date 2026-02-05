@@ -948,6 +948,125 @@ class GeminiAgent(Agent):
         return count
 
 
+class ChatGPTAgent(Agent):
+    """
+    ChatGPT Bot: A balanced agent that values steady advancement, sprint points,
+    and card efficiency while preferring free movement when possible.
+    """
+
+    def __init__(self, player_id: int):
+        super().__init__(player_id, "ChatGPT")
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
+        if not valid_moves:
+            return None
+
+        # Low hand: prioritize free movement, then refill
+        if len(player.hand) < 3:
+            draft_move = get_best_draft_move(valid_moves)
+            if draft_move:
+                return draft_move
+            if should_use_team_car(player, valid_moves):
+                team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+                if team_car_moves:
+                    worst_card = choose_card_to_discard(player)
+                    if worst_card:
+                        team_car_moves[0].cards = [worst_card]
+                    return team_car_moves[0]
+
+        scored_moves = []
+        for move in valid_moves:
+            score = self._score_move(move, engine, player)
+            scored_moves.append((score, move))
+
+        scored_moves.sort(key=lambda x: x[0], reverse=True)
+        best_move = scored_moves[0][1]
+
+        if best_move.action_type == ActionType.TEAM_CAR and not best_move.cards:
+            worst_card = choose_card_to_discard(player)
+            if worst_card:
+                best_move.cards = [worst_card]
+
+        return best_move
+
+    def _score_move(self, move: Move, engine: GameEngine, player: Player) -> float:
+        # TeamCar is a fallback unless hand is low
+        if move.action_type == ActionType.TEAM_CAR:
+            if len(player.hand) <= 1:
+                return 40.0
+            if len(player.hand) <= 2:
+                return 20.0
+            return -30.0
+
+        base_movement = self._get_base_movement(move, engine)
+        if base_movement == 0:
+            return -10.0
+
+        # Advancement: total team movement with terrain limits
+        advancement = self._calculate_total_movement(move, engine, base_movement)
+        score = advancement * 8.0
+
+        # Sprint/finish potential
+        score += self._score_sprints(move, engine, base_movement) * 30.0
+
+        # Card efficiency
+        score -= len(move.cards) * 6.0
+
+        # Prefer free movement
+        if move.action_type in [ActionType.DRAFT, ActionType.TEAM_DRAFT]:
+            score += 15.0
+
+        # Small bonus for drafting multiple riders
+        if move.action_type in [ActionType.TEAM_PULL, ActionType.TEAM_DRAFT]:
+            score += len(move.drafting_riders) * 5.0
+
+        # Terrain matching bonus
+        current_terrain = engine._get_terrain_at_position(move.rider.position)
+        if move.rider.rider_type == CardType.CLIMBER and current_terrain == TerrainType.CLIMB:
+            score += 10.0
+        elif move.rider.rider_type == CardType.SPRINTER and current_terrain in [TerrainType.FLAT, TerrainType.DESCENT]:
+            score += 8.0
+        elif move.rider.rider_type == CardType.ROULEUR:
+            score += 4.0
+
+        return score
+
+    def _get_base_movement(self, move: Move, engine: GameEngine) -> int:
+        if move.action_type in [ActionType.PULL, ActionType.TEAM_PULL]:
+            return engine._calculate_pull_movement(move.rider, move.cards)
+        if move.action_type == ActionType.ATTACK:
+            return engine._calculate_attack_movement(move.rider, move.cards)
+        if move.action_type in [ActionType.DRAFT, ActionType.TEAM_DRAFT]:
+            if engine.state.last_move:
+                return engine.state.last_move.get('movement', 0)
+        return 0
+
+    def _calculate_total_movement(self, move: Move, engine: GameEngine, base_movement: int) -> int:
+        total = engine._calculate_limited_movement(move.rider, move.rider.position, base_movement)
+        for drafter in move.drafting_riders:
+            total += engine._calculate_limited_movement(drafter, drafter.position, base_movement)
+        return total
+
+    def _score_sprints(self, move: Move, engine: GameEngine, base_movement: int) -> float:
+        score = 0.0
+        riders = [move.rider] + list(move.drafting_riders)
+        for rider in riders:
+            actual = engine._calculate_limited_movement(rider, rider.position, base_movement)
+            old_pos = rider.position
+            new_pos = min(old_pos + actual, engine.state.track_length - 1)
+
+            for pos in range(old_pos + 1, new_pos + 1):
+                tile = engine.state.get_tile_at_position(pos)
+                if tile and tile.terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
+                    arrivals = engine.state.sprint_arrivals.get(pos, [])
+                    if rider in arrivals:
+                        continue
+                    if tile.sprint_points and len(arrivals) < len(tile.sprint_points):
+                        score += tile.sprint_points[len(arrivals)]
+        return score
+
+
 # Factory function to create agents
 def create_agent(agent_type: str, player_id: int) -> Agent:
     """Create an agent of the specified type"""
@@ -962,6 +1081,7 @@ def create_agent(agent_type: str, player_id: int) -> Agent:
         'adaptive': AdaptiveAgent,
         'wheelsucker': WheelsuckerAgent,
         'gemini': GeminiAgent,
+        'chatgpt': ChatGPTAgent,
         'claudebot': ClaudeBotAgent,
         'rouleur_focus': lambda pid: CardTypeAgent(pid, CardType.ROULEUR),
         'sprinter_focus': lambda pid: CardTypeAgent(pid, CardType.SPRINTER),
@@ -979,6 +1099,6 @@ def get_available_agents() -> List[str]:
     return [
         'random', 'marc_soler', 'lead_rider', 'balanced',
         'sprint_hunter', 'conservative', 'aggressive', 'adaptive',
-        'wheelsucker', 'gemini', 'claudebot',
+        'wheelsucker', 'gemini', 'chatgpt', 'claudebot',
         'rouleur_focus', 'sprinter_focus', 'climber_focus'
     ]
