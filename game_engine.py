@@ -3,9 +3,21 @@ Chasse Patate - Game Engine
 Handles game logic, move validation, and rule enforcement
 """
 
-from typing import List, Tuple, Optional, Set
+from typing import List, Tuple, Optional, Set, Dict
 from dataclasses import dataclass
 from game_state import GameState, Player, Rider, Card, TerrainType, CardType, PlayMode, ActionType
+
+
+# Terrain limits: Maps (rider_type, terrain_type) -> max fields per round on that terrain
+# If a rider/terrain combo is not in this dict, there is no limit
+TERRAIN_LIMITS: Dict[Tuple[CardType, TerrainType], int] = {
+    # Sprinters are limited to 3 fields per round on climbing terrain
+    (CardType.SPRINTER, TerrainType.CLIMB): 3,
+    # Rouleurs are limited to 4 fields per round on climbing terrain
+    (CardType.ROULEUR, TerrainType.CLIMB): 4,
+    # Climbers are limited to 3 fields per round on cobblestone terrain
+    (CardType.CLIMBER, TerrainType.COBBLES): 3,
+}
 
 
 @dataclass
@@ -37,9 +49,73 @@ class Move:
 
 class GameEngine:
     """Handles game logic and rules"""
-    
+
     def __init__(self, game_state: GameState):
         self.state = game_state
+
+    def _get_terrain_at_position(self, position: int) -> TerrainType:
+        """Get the terrain type at a position, treating SPRINT/FINISH as FLAT"""
+        tile = self.state.get_tile_at_position(position)
+        if not tile:
+            return TerrainType.FLAT
+        terrain = tile.terrain
+        # SPRINT and FINISH are treated as FLAT for movement purposes
+        if terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
+            return TerrainType.FLAT
+        return terrain
+
+    def _calculate_limited_movement(self, rider: Rider, start_position: int, base_movement: int) -> int:
+        """Calculate actual movement considering terrain limits.
+
+        Terrain limits only apply to the fields that are on limited terrain.
+        For example, if a Sprinter moves from flat onto a climb, only the climb
+        portion counts toward the 3-field climb limit.
+
+        Args:
+            rider: The rider moving
+            start_position: Starting position
+            base_movement: The base movement value (from cards or drafting)
+
+        Returns:
+            The actual number of fields the rider can move (may be less than base_movement)
+        """
+        rider_type = rider.rider_type
+
+        # Track how many fields we've moved on each limited terrain type
+        limited_terrain_counts: Dict[TerrainType, int] = {}
+
+        # Initialize counters for terrains that have limits for this rider
+        for (card_type, terrain), limit in TERRAIN_LIMITS.items():
+            if card_type == rider_type:
+                limited_terrain_counts[terrain] = 0
+
+        # If this rider has no terrain limits, return base movement
+        if not limited_terrain_counts:
+            return base_movement
+
+        # Walk through each field one by one
+        actual_movement = 0
+        for step in range(base_movement):
+            next_position = start_position + actual_movement + 1
+
+            # Don't move past track end
+            if next_position >= self.state.track_length:
+                actual_movement = self.state.track_length - 1 - start_position
+                break
+
+            terrain = self._get_terrain_at_position(next_position)
+
+            # Check if this terrain is limited for this rider
+            if terrain in limited_terrain_counts:
+                limit = TERRAIN_LIMITS.get((rider_type, terrain))
+                if limit is not None and limited_terrain_counts[terrain] >= limit:
+                    # We've hit the limit for this terrain, stop here
+                    break
+                limited_terrain_counts[terrain] += 1
+
+            actual_movement += 1
+
+        return actual_movement
     
     def get_valid_moves(self, player: Player) -> List[Move]:
         """Get all valid actions (Pull, Attack, Draft, TeamCar, TeamPull, TeamDraft) for a player"""
@@ -271,16 +347,16 @@ class GameEngine:
         
         # Calculate movement based on action type
         if move.action_type == ActionType.PULL:
-            total_movement = self._calculate_pull_movement(move.rider, move.cards)
+            base_movement = self._calculate_pull_movement(move.rider, move.cards)
             action_name = "Pull"
         elif move.action_type == ActionType.ATTACK:
-            total_movement = self._calculate_attack_movement(move.rider, move.cards)
+            base_movement = self._calculate_attack_movement(move.rider, move.cards)
             action_name = "Attack"
         elif move.action_type == ActionType.DRAFT:
             # Draft: copy the movement from the last Pull/Draft/TeamPull/TeamDraft move
             if not self.state.last_move or self.state.last_move.get('action') not in ['Pull', 'Draft', 'TeamPull', 'TeamDraft']:
                 return {'success': False, 'error': 'Cannot draft - no valid move to follow'}
-            total_movement = self.state.last_move.get('movement', 0)
+            base_movement = self.state.last_move.get('movement', 0)
             action_name = "Draft"
         elif move.action_type == ActionType.TEAM_PULL:
             # TeamPull: Execute Pull for lead rider, then draft for teammates
@@ -296,7 +372,10 @@ class GameEngine:
             return result
         else:
             return {'success': False, 'error': f'Unknown action type: {move.action_type}'}
-        
+
+        # Apply terrain limits to calculate actual movement
+        total_movement = self._calculate_limited_movement(move.rider, old_position, base_movement)
+
         # Move the rider
         new_position = min(old_position + total_movement, self.state.track_length - 1)
         move.rider.position = new_position
@@ -457,27 +536,39 @@ class GameEngine:
         }
     
     def _execute_team_pull(self, move: Move, player: Player, old_position: int, old_terrain: str) -> dict:
-        """Execute TeamPull: Lead rider pulls, teammates draft"""
-        # Calculate pull movement for lead rider
-        pull_movement = self._calculate_pull_movement(move.rider, move.cards)
-        
+        """Execute TeamPull: Lead rider pulls, teammates draft
+
+        Each rider (lead and drafters) may have different terrain limits, so they
+        may end up at different positions even though they're drafting together.
+        """
+        # Calculate base pull movement for lead rider
+        base_pull_movement = self._calculate_pull_movement(move.rider, move.cards)
+
+        # Apply terrain limits to lead rider
+        pull_movement = self._calculate_limited_movement(move.rider, old_position, base_pull_movement)
+
         # Move lead rider
         new_position = min(old_position + pull_movement, self.state.track_length - 1)
         move.rider.position = new_position
-        
+
         new_tile = self.state.get_tile_at_position(new_position)
         new_terrain = new_tile.terrain.value if new_tile else "Unknown"
-        
+
         # Remove cards from hand
         for card in move.cards:
             player.hand.remove(card)
             self.state.discard_pile.append(card)
-        
-        # Move drafting riders the same distance
+
+        # Move drafting riders - each rider applies their own terrain limits
+        # They try to move the same base distance but may be limited by their rider type
         drafting_results = []
         for drafter in move.drafting_riders:
             drafter_old_pos = drafter.position
-            drafter_new_pos = min(drafter_old_pos + pull_movement, self.state.track_length - 1)
+            # Apply this drafter's terrain limits to the base movement
+            drafter_actual_movement = self._calculate_limited_movement(
+                drafter, drafter_old_pos, base_pull_movement
+            )
+            drafter_new_pos = min(drafter_old_pos + drafter_actual_movement, self.state.track_length - 1)
             drafter.position = drafter_new_pos
             drafting_results.append({
                 'rider': f"P{drafter.player_id}R{drafter.rider_id}",
@@ -558,20 +649,28 @@ class GameEngine:
         return result
     
     def _execute_team_draft(self, move: Move, player: Player, old_position: int, old_terrain: str) -> dict:
-        """Execute TeamDraft: Multiple riders draft together"""
-        # Get movement from last Pull/Draft/TeamPull/TeamDraft
+        """Execute TeamDraft: Multiple riders draft together
+
+        Each rider may have different terrain limits, so they may end up at
+        different positions even though they're drafting together.
+        """
+        # Get base movement from last Pull/Draft/TeamPull/TeamDraft
         if not self.state.last_move or self.state.last_move.get('action') not in ['Pull', 'Draft', 'TeamPull', 'TeamDraft']:
             return {'success': False, 'error': 'Cannot draft - no valid move to follow'}
-        
-        draft_movement = self.state.last_move.get('movement', 0)
-        
-        # Move all riders (primary + drafting_riders)
+
+        base_draft_movement = self.state.last_move.get('movement', 0)
+
+        # Move all riders (primary + drafting_riders) - each with their own terrain limits
         all_drafting_riders = [move.rider] + move.drafting_riders
         drafting_results = []
-        
+
         for drafter in all_drafting_riders:
             drafter_old_pos = drafter.position
-            drafter_new_pos = min(drafter_old_pos + draft_movement, self.state.track_length - 1)
+            # Apply this drafter's terrain limits to the base movement
+            drafter_actual_movement = self._calculate_limited_movement(
+                drafter, drafter_old_pos, base_draft_movement
+            )
+            drafter_new_pos = min(drafter_old_pos + drafter_actual_movement, self.state.track_length - 1)
             drafter.position = drafter_new_pos
             drafting_results.append({
                 'rider': f"P{drafter.player_id}R{drafter.rider_id}",
@@ -621,7 +720,7 @@ class GameEngine:
             'new_terrain': new_terrain,
             'cards_played': [],
             'num_cards': 0,
-            'movement': draft_movement,
+            'movement': base_draft_movement,
             'points_earned': 0,
             'drafting_riders': drafting_results,
             'checkpoints_reached': checkpoints_reached if checkpoints_reached else None,
