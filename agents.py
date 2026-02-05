@@ -6,7 +6,7 @@ Different AI strategies for testing game balance
 from abc import ABC, abstractmethod
 from typing import List, Optional
 import random
-from game_state import Player, Card, CardType, TerrainType, PlayMode, ActionType
+from game_state import Player, Card, CardType, TerrainType, PlayMode, ActionType, Rider
 from game_engine import GameEngine, Move
 
 
@@ -109,29 +109,36 @@ def choose_card_to_discard(player: Player) -> Optional[Card]:
 
 class Agent(ABC):
     """Base class for AI agents"""
-    
+
     def __init__(self, player_id: int, name: str):
         self.player_id = player_id
         self.name = name
-    
+
     @abstractmethod
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
-        """Choose a move given the current game state"""
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
+        """Choose a move given the current game state.
+
+        Args:
+            engine: The game engine
+            player: The current player
+            eligible_riders: Riders that can move this turn (unmoved this round).
+                            If None, all riders are eligible (backward compat).
+        """
         pass
-    
+
     def __str__(self):
         return f"{self.name} (Player {self.player_id})"
 
 
 class RandomAgent(Agent):
     """Agent that plays randomly - baseline for comparison"""
-    
+
     def __init__(self, player_id: int):
         super().__init__(player_id, "Random")
-    
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Choose a random valid move"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         return random.choice(valid_moves)
@@ -139,13 +146,13 @@ class RandomAgent(Agent):
 
 class GreedyAgent(Agent):
     """Agent that always plays for maximum total advancement across all riders"""
-    
+
     def __init__(self, player_id: int):
         super().__init__(player_id, "Greedy")
-    
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Choose action that maximizes total advancement (distance × number of riders)"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -175,13 +182,13 @@ class GreedyAgent(Agent):
 
 class LeadRiderAgent(Agent):
     """Agent that focuses on advancing the leading rider"""
-    
+
     def __init__(self, player_id: int):
         super().__init__(player_id, "LeadRider")
-    
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Advance the leading rider, prioritizing drafts over TeamCar when low on cards"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -218,13 +225,13 @@ class LeadRiderAgent(Agent):
 
 class BalancedAgent(Agent):
     """Agent that tries to keep all three riders advancing together"""
-    
+
     def __init__(self, player_id: int):
         super().__init__(player_id, "Balanced")
-    
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Move the most behind rider, prioritizing drafts over TeamCar when low on cards"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -261,13 +268,13 @@ class BalancedAgent(Agent):
 
 class SprintHunterAgent(Agent):
     """Agent that prioritizes sprint points"""
-    
+
     def __init__(self, player_id: int):
         super().__init__(player_id, "SprintHunter")
-    
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Prioritize reaching sprint points"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -291,13 +298,13 @@ class SprintHunterAgent(Agent):
 
 class ConservativeAgent(Agent):
     """Agent that plays conservatively"""
-    
+
     def __init__(self, player_id: int):
         super().__init__(player_id, "Conservative")
-    
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Choose conservative moves"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -307,13 +314,13 @@ class ConservativeAgent(Agent):
 
 class AggressiveAgent(Agent):
     """Agent that plays aggressively for maximum advancement"""
-    
+
     def __init__(self, player_id: int):
         super().__init__(player_id, "Aggressive")
-    
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Prefer moves for maximum advancement"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -323,14 +330,14 @@ class AggressiveAgent(Agent):
 
 class CardTypeAgent(Agent):
     """Agent that prioritizes playing specific card types"""
-    
+
     def __init__(self, player_id: int, preferred_type: CardType):
         super().__init__(player_id, f"{preferred_type.value}Focus")
         self.preferred_type = preferred_type
-    
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Prefer playing cards of the preferred type"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -348,13 +355,13 @@ class CardTypeAgent(Agent):
 
 class AdaptiveAgent(Agent):
     """Agent that adapts strategy based on terrain ahead"""
-    
+
     def __init__(self, player_id: int):
         super().__init__(player_id, "Adaptive")
-    
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Adapt strategy based on upcoming terrain, prioritizing drafts over TeamCar when low on cards"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -443,9 +450,9 @@ class ClaudeBotAgent(Agent):
         from game_engine import TERRAIN_LIMITS
         self.terrain_limits = TERRAIN_LIMITS
 
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Choose the best move using a multi-factor scoring system"""
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
 
@@ -700,13 +707,13 @@ class WheelsuckerAgent(Agent):
 
     def __init__(self, player_id: int):
         super().__init__(player_id, "Wheelsucker")
-    
-    def choose_move(self, engine: GameEngine, player: Player) -> Optional[Move]:
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
         """Prioritize drafting, then positioning for drafts, then TeamCar
-        
+
         Only chooses draft/pull moves if total_advancement > 0
         """
-        valid_moves = engine.get_valid_moves(player)
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
         
@@ -811,6 +818,136 @@ class WheelsuckerAgent(Agent):
         return len([r for r in riders_at_dest if r != move.rider])
 
 
+class GeminiAgent(Agent):
+    """
+    Gemini Bot: A strategic agent that balances advancement, scoring, and efficiency.
+    It evaluates moves based on a weighted scoring system considering:
+    - Total advancement (distance * riders)
+    - Sprint/Finish points
+    - Card efficiency (favoring drafts)
+    - Checkpoints (card draw)
+    - Hand management (TeamCar)
+    """
+
+    def __init__(self, player_id: int):
+        super().__init__(player_id, "Gemini")
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
+        if not valid_moves:
+            return None
+
+        scored_moves = []
+        for move in valid_moves:
+            score = self._score_move(move, engine, player)
+            scored_moves.append((score, move))
+
+        # Sort by score descending
+        scored_moves.sort(key=lambda x: x[0], reverse=True)
+
+        best_move = scored_moves[0][1]
+
+        # If TeamCar is selected, ensure we pick a card to discard
+        if best_move.action_type == ActionType.TEAM_CAR and not best_move.cards:
+            worst_card = choose_card_to_discard(player)
+            if worst_card:
+                best_move.cards = [worst_card]
+
+        return best_move
+
+    def _score_move(self, move: Move, engine: GameEngine, player: Player) -> float:
+        score = 0.0
+
+        # 1. Handle TeamCar separately
+        if move.action_type == ActionType.TEAM_CAR:
+            # Base score for TeamCar is low, unless we really need cards
+            score = -20.0
+            # Bonus for low hand size
+            if len(player.hand) <= 2:
+                score += 60.0
+            elif len(player.hand) <= 3:
+                score += 30.0
+            return score
+
+        # 2. Calculate Advancement
+        advancement = calculate_total_advancement(engine, move)
+        score += advancement * 10.0
+
+        # 3. Calculate Points (Sprints/Finish)
+        points = self._estimate_points(move, engine)
+        score += points * 50.0
+
+        # 4. Card Efficiency (Penalize using cards)
+        cards_used = len(move.cards)
+        score -= cards_used * 8.0
+
+        # 5. Checkpoints (Card draw potential)
+        checkpoints = self._count_checkpoints(move, engine)
+        score += checkpoints * 15.0
+
+        return score
+
+    def _get_move_distance(self, move: Move, engine: GameEngine) -> int:
+        """Calculate distance for any move type"""
+        if move.action_type in [ActionType.PULL, ActionType.TEAM_PULL]:
+            return engine._calculate_pull_movement(move.rider, move.cards)
+        elif move.action_type == ActionType.ATTACK:
+            return engine._calculate_attack_movement(move.rider, move.cards)
+        elif move.action_type in [ActionType.DRAFT, ActionType.TEAM_DRAFT]:
+            if engine.state.last_move:
+                return engine.state.last_move.get('movement', 0)
+        return 0
+
+    def _estimate_points(self, move: Move, engine: GameEngine) -> int:
+        """Estimate points earned by this move"""
+        points = 0
+        riders = [move.rider]
+        if move.drafting_riders:
+            riders.extend(move.drafting_riders)
+
+        distance = self._get_move_distance(move, engine)
+        if distance == 0:
+            return 0
+
+        for rider in riders:
+            old_pos = rider.position
+            new_pos = min(old_pos + distance, engine.state.track_length - 1)
+
+            # Check all tiles crossed
+            for pos in range(old_pos + 1, new_pos + 1):
+                tile = engine.state.get_tile_at_position(pos)
+                if tile and tile.terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
+                    # Check if points are still available
+                    arrivals = engine.state.sprint_arrivals.get(pos, [])
+                    if rider in arrivals:
+                        continue
+                    current_rank = len(arrivals)
+                    if tile.sprint_points and current_rank < len(tile.sprint_points):
+                        points += tile.sprint_points[current_rank]
+        return points
+
+    def _count_checkpoints(self, move: Move, engine: GameEngine) -> int:
+        """Count new checkpoints reached"""
+        count = 0
+        riders = [move.rider]
+        if move.drafting_riders:
+            riders.extend(move.drafting_riders)
+
+        distance = self._get_move_distance(move, engine)
+        if distance == 0:
+            return 0
+
+        for rider in riders:
+            old_pos = rider.position
+            new_pos = min(old_pos + distance, engine.state.track_length - 1)
+
+            # Checkpoints are at 10, 20, 30...
+            for cp in range(10, new_pos + 1, 10):
+                if cp > old_pos and not engine.state.has_rider_reached_checkpoint(rider, cp):
+                    count += 1
+        return count
+
+
 # Factory function to create agents
 def create_agent(agent_type: str, player_id: int) -> Agent:
     """Create an agent of the specified type"""
@@ -824,6 +961,7 @@ def create_agent(agent_type: str, player_id: int) -> Agent:
         'aggressive': AggressiveAgent,
         'adaptive': AdaptiveAgent,
         'wheelsucker': WheelsuckerAgent,
+        'gemini': GeminiAgent,
         'claudebot': ClaudeBotAgent,
         'rouleur_focus': lambda pid: CardTypeAgent(pid, CardType.ROULEUR),
         'sprinter_focus': lambda pid: CardTypeAgent(pid, CardType.SPRINTER),
@@ -841,6 +979,6 @@ def get_available_agents() -> List[str]:
     return [
         'random', 'greedy', 'lead_rider', 'balanced',
         'sprint_hunter', 'conservative', 'aggressive', 'adaptive',
-        'wheelsucker', 'claudebot',
+        'wheelsucker', 'gemini', 'claudebot',
         'rouleur_focus', 'sprinter_focus', 'climber_focus'
     ]
