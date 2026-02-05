@@ -3,11 +3,81 @@ Chasse Patate - Interactive Play
 Play against AI bots in the terminal.
 """
 
+import json
+from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 from itertools import combinations
 from game_state import GameState, Card, CardType, ActionType, PlayMode, Rider, Player, TerrainType
 from game_engine import GameEngine, Move
 from agents import Agent, create_agent, get_available_agents
+
+
+# ---------------------------------------------------------------------------
+# Game Logger for interactive play
+# ---------------------------------------------------------------------------
+
+class PlayLogger:
+    """Logs interactive game information in the same format as simulator"""
+
+    def __init__(self, log_dir: str = "game_logs"):
+        self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(exist_ok=True)
+        self.game_info = {}
+        self.move_history = []
+
+    def _get_next_play_id(self) -> int:
+        """Find the next available play_XX.json ID"""
+        existing = list(self.log_dir.glob("play_*.json"))
+        if not existing:
+            return 0
+        ids = []
+        for f in existing:
+            try:
+                # Extract number from play_XX.json
+                num = int(f.stem.split("_")[1])
+                ids.append(num)
+            except (IndexError, ValueError):
+                pass
+        return max(ids) + 1 if ids else 0
+
+    def start_game(self, agents: List[Agent], num_players: int):
+        """Initialize logging for a new interactive game"""
+        self.move_history = []
+        self.game_id = self._get_next_play_id()
+
+        self.game_info = {
+            'game_id': self.game_id,
+            'timestamp': datetime.now().isoformat(),
+            'num_players': num_players,
+            'agents': [{'player_id': a.player_id, 'type': a.name} for a in agents],
+            'mode': 'interactive'
+        }
+
+    def log_turn(self, round_num: int, turn_num: int, player_id: int,
+                 move_result: dict, game_state: dict):
+        """Log a single turn within a round"""
+        turn_data = {
+            'round': round_num,
+            'turn': turn_num,
+            'player': player_id,
+            'move': move_result,
+            'state': game_state
+        }
+        self.move_history.append(turn_data)
+
+    def end_game(self, final_result: dict):
+        """Finalize and save game log"""
+        self.game_info['final_result'] = final_result
+        self.game_info['move_history'] = self.move_history
+
+        # Save detailed JSON log as play_XX.json
+        game_file = self.log_dir / f"play_{self.game_id}.json"
+        with open(game_file, 'w') as f:
+            json.dump(self.game_info, f, indent=2)
+
+        print(f"\nGame log saved to: {game_file}")
+        return self.game_info
 
 
 # ---------------------------------------------------------------------------
@@ -584,6 +654,10 @@ def play_game():
     state = GameState(num_players=num_players)
     engine = GameEngine(state)
 
+    # Initialize logger
+    logger = PlayLogger()
+    logger.start_game(agents, num_players)
+
     # Assign agent names to players
     for i, agent in enumerate(agents):
         state.players[i].name = agent.name
@@ -633,6 +707,12 @@ def play_game():
                 moved_riders.extend(move.drafting_riders)
             state.mark_riders_moved(moved_riders, acted_position)
 
+            # Log the turn
+            game_summary = state.get_game_summary()
+            logger.log_turn(state.current_round, turn_count,
+                           current_player.player_id,
+                           move_result, game_summary)
+
             # Print result
             rider_names = ", ".join(f"P{r.player_id}R{r.rider_id}" for r in moved_riders)
             print(f"  Turn {turn_count}: {agent.name} (P{current_player.player_id}) "
@@ -645,6 +725,21 @@ def play_game():
 
     # --- Game over -------------------------------------------------------
     final = engine.process_end_of_race()
+
+    # Add game over details to final result
+    reason = state.get_game_over_reason()
+    final['game_over_reason'] = reason
+    final['total_rounds'] = state.current_round
+    final['total_turns'] = turn_count
+
+    # Count riders at finish
+    finish_pos = state.track_length - 1
+    riders_at_finish = sum(1 for p in state.players for r in p.riders if r.position >= finish_pos)
+    final['riders_at_finish'] = riders_at_finish
+
+    # Save game log
+    logger.end_game(final)
+
     print(f"\n{'='*60}")
     print(f"  GAME OVER  after {state.current_round} rounds ({turn_count} turns)")
     print(f"{'='*60}")
@@ -654,7 +749,6 @@ def play_game():
         print(f"  {label}: {score} points")
     print(f"\nWinner: {final['winner']} with {final['winner_score']} points!")
 
-    reason = state.get_game_over_reason()
     if reason:
         print(f"Reason: {reason}")
     print()

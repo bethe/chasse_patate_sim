@@ -249,6 +249,16 @@ class CustomAgent(Agent):
 # Register in agents.py create_agent() and get_available_agents()
 ```
 
+## Game Logs
+
+All games are logged in detail as JSON files in the `game_logs/` directory:
+
+- `game_0.json`, `game_1.json`, etc. - Simulated game logs
+- `play_0.json`, `play_1.json`, etc. - Interactive game logs (from `play.py`)
+- `analysis_report.txt` - Comprehensive analysis report
+
+Interactive games (`play.py`) are logged in the same format as simulated games, with an additional `mode: "interactive"` field to distinguish them.
+
 ## Analysis Report Contents
 
 Generated reports include:
