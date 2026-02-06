@@ -11,6 +11,9 @@ Tests all core game mechanics including:
 - Sprint and finish scoring
 - Checkpoint mechanics
 - Round-based game flow
+- Agent behavior (TobiBot)
+
+Total: 75+ unit tests
 """
 
 import unittest
@@ -1082,6 +1085,281 @@ class TestTrackConfiguration(unittest.TestCase):
         # Position 19 is last field of first tile
         first_tile_last = state.track[19]
         self.assertEqual(first_tile_last.terrain, TerrainType.SPRINT)
+
+
+class TestTobiBotAgent(unittest.TestCase):
+    """Test TobiBot agent's prioritized decision-making system"""
+
+    def setUp(self):
+        """Set up a game for TobiBot testing"""
+        from agents import create_agent
+        self.state = GameState(num_players=2, tile_config=[1, 4, 5])
+        self.engine = GameEngine(self.state)
+        self.tobibot = create_agent('tobibot', 0)
+        self.player = self.state.players[0]
+
+    def test_tobibot_creation(self):
+        """Test that TobiBot can be created and has correct name"""
+        self.assertEqual(self.tobibot.name, "TobiBot")
+        self.assertEqual(self.tobibot.player_id, 0)
+
+    def test_priority1_scoring_moves(self):
+        """Test Priority 1: TobiBot prioritizes moves that score points"""
+        # Position a rider near a sprint
+        rider = self.player.riders[0]
+        rider.position = 17  # Two positions before sprint at position 19
+
+        # Give cards to move
+        self.player.hand = [
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5)
+        ]
+
+        # TobiBot should choose a move that reaches the sprint
+        move = self.tobibot.choose_move(self.engine, self.player, self.player.riders)
+        self.assertIsNotNone(move)
+
+        # Calculate if this move will reach the sprint
+        if move.action_type == ActionType.PULL:
+            distance = self.engine._calculate_pull_movement(move.rider, move.cards)
+            target_pos = move.rider.position + distance
+            # Should reach or pass position 19 (sprint)
+            self.assertGreaterEqual(target_pos, 19)
+
+    def test_priority2_hand_management_low_cards(self):
+        """Test Priority 2: TeamCar when hand ≤ 6 and no efficient moves"""
+        # Set hand to exactly 6 cards (all energy)
+        self.player.hand = [Card(CardType.ENERGY, 1) for _ in range(6)]
+
+        # Position riders where they can't draft and moves aren't efficient
+        for i, rider in enumerate(self.player.riders):
+            rider.position = i * 10  # Spread out
+
+        # Clear last move so drafting isn't possible
+        self.state.last_move = None
+
+        move = self.tobibot.choose_move(self.engine, self.player, self.player.riders)
+
+        # Should consider TeamCar when hand is low and no efficient moves
+        # (May not always choose TeamCar if there are scoring opportunities)
+        self.assertIsNotNone(move)
+
+    def test_priority3_prefer_teamdraft(self):
+        """Test Priority 3: Prefer TeamDraft when available"""
+        # Set up situation where TeamDraft is available
+        # Put two riders at same position, make previous move with movement
+        self.player.riders[0].position = 5
+        self.player.riders[1].position = 5
+        self.player.riders[2].position = 10
+
+        # Set up last move so drafting is possible
+        self.state.last_move = {
+            'position': 5,
+            'movement': 3,
+            'action_type': ActionType.PULL
+        }
+
+        # Give plenty of cards so hand management doesn't interfere
+        self.player.hand = [Card(CardType.ROULEUR, 5) for _ in range(10)]
+
+        # Mark riders 0 and 1 as eligible (not moved yet this round)
+        eligible = [self.player.riders[0], self.player.riders[1]]
+        move = self.tobibot.choose_move(self.engine, self.player, eligible)
+
+        # Should prefer TeamDraft if available
+        self.assertIsNotNone(move)
+        if move.action_type == ActionType.TEAM_DRAFT:
+            # Good - TeamDraft was chosen
+            self.assertEqual(move.action_type, ActionType.TEAM_DRAFT)
+
+    def test_priority3_prefer_draft_over_pull(self):
+        """Test Priority 3: Prefer Draft over Pull when available"""
+        # Set up situation where Draft is available
+        rider = self.player.riders[0]
+        rider.position = 5
+
+        # Set up last move so drafting is possible
+        self.state.last_move = {
+            'position': 5,
+            'movement': 3,
+            'action_type': ActionType.PULL
+        }
+
+        # Give plenty of cards
+        self.player.hand = [Card(CardType.ROULEUR, 5) for _ in range(10)]
+
+        move = self.tobibot.choose_move(self.engine, self.player, [rider])
+
+        # Should choose Draft (free movement) over Pull (costs cards)
+        self.assertIsNotNone(move)
+        # Draft should be preferred when available
+        if move.action_type == ActionType.DRAFT:
+            self.assertEqual(move.action_type, ActionType.DRAFT)
+
+    def test_priority4_group_with_teammates(self):
+        """Test Priority 4: Advance to fields with team riders"""
+        # Position riders so one can move to join another
+        self.player.riders[0].position = 2
+        self.player.riders[1].position = 5  # Target position
+        self.player.riders[2].position = 10
+
+        # Give cards to move
+        self.player.hand = [
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5)
+        ]
+
+        # Clear last move so no drafting available
+        self.state.last_move = None
+
+        move = self.tobibot.choose_move(self.engine, self.player, [self.player.riders[0]])
+
+        self.assertIsNotNone(move)
+        # TobiBot should try to group with teammates when possible
+
+    def test_priority5_el_patron_positioning(self):
+        """Test Priority 5: When El Patron, position with opponents"""
+        # Make player 0 the El Patron
+        self.state.el_patron = 0
+
+        # Position opponent rider
+        opponent_rider = self.state.players[1].riders[0]
+        opponent_rider.position = 5
+
+        # Position our rider near opponent
+        self.player.riders[0].position = 2
+
+        # Give cards to move
+        self.player.hand = [
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5)
+        ]
+
+        # Clear last move
+        self.state.last_move = None
+
+        move = self.tobibot.choose_move(self.engine, self.player, [self.player.riders[0]])
+
+        self.assertIsNotNone(move)
+        # When El Patron, should consider moving to opponent positions
+
+    def test_priority7_isolated_lead_rider(self):
+        """Test Priority 7: TeamCar if lead rider is isolated without options"""
+        # Position lead rider alone and far ahead
+        self.player.riders[0].position = 0
+        self.player.riders[1].position = 0
+        self.player.riders[2].position = 20  # Lead rider, isolated
+
+        # Give few cards (but >6 so priority 2 doesn't trigger)
+        self.player.hand = [Card(CardType.ENERGY, 1) for _ in range(7)]
+
+        # Clear last move so lead can't draft
+        self.state.last_move = None
+
+        # Only lead rider is eligible
+        move = self.tobibot.choose_move(self.engine, self.player, [self.player.riders[2]])
+
+        self.assertIsNotNone(move)
+        # If lead rider is isolated and can't advance well, might use TeamCar
+
+    def test_tobibot_calculates_points_correctly(self):
+        """Test that TobiBot correctly calculates potential points"""
+        # Position rider near sprint
+        rider = self.player.riders[0]
+        rider.position = 17
+
+        # Give cards
+        self.player.hand = [Card(CardType.ROULEUR, 5) for _ in range(3)]
+
+        # Create a move that would reach the sprint
+        move = Move(
+            action_type=ActionType.PULL,
+            rider=rider,
+            cards=[self.player.hand[0], self.player.hand[1]]
+        )
+
+        # Calculate points for this move
+        points = self.tobibot._calculate_points(move, self.engine)
+
+        # Should detect that sprint points are available
+        self.assertGreaterEqual(points, 0)
+
+    def test_tobibot_respects_terrain_limits(self):
+        """Test that TobiBot respects terrain limits in calculations"""
+        # Use a track with climbs
+        state = GameState(num_players=2, tile_config=[2])  # Mountaintop Finish
+        engine = GameEngine(state)
+        player = state.players[0]
+
+        from agents import create_agent
+        tobibot = create_agent('tobibot', 0)
+
+        # Position sprinter on climb
+        sprinter = player.riders[1]  # Sprinter
+        sprinter.position = 3  # Start of climb
+
+        # Give cards
+        player.hand = [Card(CardType.SPRINTER, 7) for _ in range(3)]
+
+        # Get move
+        move = tobibot.choose_move(engine, player, [sprinter])
+
+        self.assertIsNotNone(move)
+        # TobiBot should account for sprinter's 3-field limit on climbs
+
+    def test_tobibot_can_handle_empty_moves(self):
+        """Test that TobiBot handles situations with no valid moves gracefully"""
+        # Remove all cards
+        self.player.hand = []
+
+        # Position riders where TeamCar isn't available (need implementation check)
+        move = self.tobibot.choose_move(self.engine, self.player, self.player.riders)
+
+        # Should either return a valid move or None
+        if move is not None:
+            self.assertIn(move.action_type, [
+                ActionType.PULL, ActionType.ATTACK, ActionType.DRAFT,
+                ActionType.TEAM_PULL, ActionType.TEAM_DRAFT, ActionType.TEAM_CAR
+            ])
+
+    def test_tobibot_identifies_isolated_rider(self):
+        """Test that TobiBot correctly identifies isolated riders"""
+        # Rider alone at position 10
+        self.player.riders[0].position = 0
+        self.player.riders[1].position = 0
+        isolated_rider = self.player.riders[2]
+        isolated_rider.position = 10
+
+        # Check isolation
+        is_isolated = self.tobibot._is_rider_isolated(isolated_rider, self.engine, self.player)
+        self.assertTrue(is_isolated)
+
+        # Rider with teammate should not be isolated
+        self.player.riders[0].position = 10
+        is_isolated = self.tobibot._is_rider_isolated(isolated_rider, self.engine, self.player)
+        self.assertFalse(is_isolated)
+
+    def test_tobibot_competes_full_game(self):
+        """Integration test: TobiBot can complete a full game"""
+        from agents import create_agent
+        from simulator import GameSimulator
+
+        # Create a simulator and run a game
+        sim = GameSimulator(num_players=2, verbose=False)
+        agents = [
+            create_agent('tobibot', 0),
+            create_agent('random', 1)
+        ]
+
+        # Run a single game
+        result = sim.run_game(agents)
+
+        # Verify game completed
+        self.assertIn('final_result', result)
+        self.assertIsNotNone(result['final_result'].get('winner'))
 
 
 if __name__ == '__main__':

@@ -18,7 +18,7 @@ This simulator allows you to:
 .
 ├── game_state.py          # Core game state, cards, El Patron rule
 ├── game_engine.py         # Game rules, move validation, terrain limits
-├── agents.py              # AI agent implementations (14 types)
+├── agents.py              # AI agent implementations (15 types)
 ├── simulator.py           # Game simulation and logging
 ├── analysis.py            # Statistical analysis tools
 ├── play.py                # Interactive play mode
@@ -123,7 +123,7 @@ Riders have maximum fields per round on certain terrain:
 
 ## Available AI Agents
 
-14 different AI agent types:
+15 different AI agent types:
 
 | Agent          | Strategy                                      |
 |----------------|-----------------------------------------------|
@@ -137,7 +137,9 @@ Riders have maximum fields per round on certain terrain:
 | adaptive       | Adjusts strategy based on terrain             |
 | wheelsucker    | Prioritizes drafting opportunities            |
 | **gemini**     | Balanced scoring: advancement + points + efficiency |
+| **chatgpt**    | Balanced agent valuing steady advancement and card efficiency |
 | **claudebot**  | Multi-factor: terrain awareness, sprint targeting, card economy |
+| **tobibot**    | Prioritized strategy: scoring, hand management, efficient moves, grouping |
 | rouleur_focus  | Prefers playing Rouleur cards                 |
 | sprinter_focus | Prefers playing Sprinter cards                |
 | climber_focus  | Prefers playing Climber cards                 |
@@ -158,6 +160,15 @@ Riders have maximum fields per round on certain terrain:
 - Card efficiency (penalizes card usage)
 - Checkpoint card drawing
 - Hand management (TeamCar when needed)
+
+**TobiBot** - Prioritized decision-making system:
+1. Score points at sprints/finish when possible (maximize points)
+2. Hand management: TeamCar when ≤6 cards unless efficient move available (>1 field/card)
+3. Prefer efficient moves: TeamDraft > Draft > TeamPull
+4. Advance to fields with team riders (grouping)
+5. When El Patron, position with opponent riders
+6. Maximize team advancement while respecting terrain limits
+7. TeamCar if lead rider is isolated without good options
 
 ## Simulation API
 

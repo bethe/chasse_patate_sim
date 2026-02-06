@@ -40,7 +40,7 @@ python test_game_rules.py
 |---|---|
 | `game_state.py` | Core data structures: cards, riders, players, board, El Patron rule |
 | `game_engine.py` | Game rules, move validation, terrain limits |
-| `agents.py` | AI agent implementations (14 strategies) |
+| `agents.py` | AI agent implementations (15 strategies) |
 | `simulator.py` | Game execution, logging, batch runs, tournaments |
 | `analysis.py` | Statistical analysis and report generation |
 | `quick_test.py` | Fast balance testing script |
@@ -101,7 +101,7 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 
 ## Available Agents
 
-14 agent types: `random`, `greedy`, `lead_rider`, `balanced`, `sprint_hunter`, `conservative`, `aggressive`, `adaptive`, `wheelsucker`, `gemini`, `claudebot`, `rouleur_focus`, `sprinter_focus`, `climber_focus`
+15 agent types: `random`, `marc_soler`, `lead_rider`, `balanced`, `sprint_hunter`, `conservative`, `aggressive`, `adaptive`, `wheelsucker`, `gemini`, `chatgpt`, `claudebot`, `tobibot`, `rouleur_focus`, `sprinter_focus`, `climber_focus`
 
 ### Featured Agents
 
@@ -119,6 +119,15 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 - Checkpoint card drawing
 - Hand management (TeamCar when needed)
 
+**TobiBot** - Prioritized decision-making:
+- Score sprint/finish points when possible
+- Hand management (TeamCar when ≤6 cards and no efficient moves)
+- Prefer efficient moves (TeamDraft > Draft > TeamPull)
+- Group with team riders
+- When El Patron, position with opponents
+- Maximize team advancement respecting terrain limits
+- TeamCar if lead rider isolated without good options
+
 ## Code Conventions
 
 - Dataclasses for all game entities (`Card`, `Rider`, `Player`, `Move`, etc.)
@@ -127,7 +136,7 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 - Abstract base class pattern for agents (`Agent` ABC -> concrete agents)
 - `eligible_riders` parameter in `choose_move()` for round-based turns
 - JSON for game logs, CSV for tournament results
-- Comprehensive unit tests in `test_game_rules.py` (60+ tests covering all mechanics)
+- Comprehensive unit tests in `test_game_rules.py` (75+ tests covering all mechanics and agents)
 
 ## Key Functions
 
