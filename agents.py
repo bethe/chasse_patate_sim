@@ -16,6 +16,16 @@ def calculate_move_distance(engine: GameEngine, move: Move) -> int:
         return engine._calculate_pull_movement(move.rider, move.cards)
     elif move.action_type == ActionType.ATTACK:
         return engine._calculate_attack_movement(move.rider, move.cards)
+    elif move.action_type == ActionType.TEAM_PULL:
+        return engine._calculate_pull_movement(move.rider, move.cards)
+    elif move.action_type == ActionType.DRAFT:
+        if engine.state.last_move:
+            return engine.state.last_move.get('movement', 0)
+        return 0
+    elif move.action_type == ActionType.TEAM_DRAFT:
+        if engine.state.last_move:
+            return engine.state.last_move.get('movement', 0)
+        return 0
     return 0
 
 
@@ -959,9 +969,9 @@ class TobiBotAgent(Agent):
     1. Score points when possible (maximize sprint/finish points)
     2. When hand ≤ 6, play TeamCar unless move efficiency >1 field/card
     3. Prefer efficient moves: TeamDraft > Draft > TeamPull
-    4. Group with team riders
+    4. Group with team riders (only when moving forward to join riders ahead)
     5. When El Patron, position with opponents
-    6. Maximize team advancement respecting terrain limits
+    6. Maximize team advancement respecting terrain limits (with bonus for card efficiency)
     7. TeamCar if any isolated rider lacks good options
     """
 
@@ -1128,10 +1138,12 @@ class TobiBotAgent(Agent):
                 continue
             destination = min(move.rider.position + distance, engine.state.track_length - 1)
 
-            # Priority 4: Advance to field with team riders
+            # Priority 4: Advance to field with team riders (only if moving forward to join them)
             riders_at_dest = engine.state.get_riders_at_position(destination)
             teammates_at_dest = [r for r in riders_at_dest if r.player_id == player.player_id and r != move.rider]
-            score += len(teammates_at_dest) * 50
+            # Only give bonus if destination is ahead of current position
+            if destination > move.rider.position:
+                score += len(teammates_at_dest) * 50
 
             # Priority 5: When El Patron, move to fields with opponents
             is_el_patron = (engine.state.el_patron == player.player_id)
@@ -1142,6 +1154,12 @@ class TobiBotAgent(Agent):
             # Priority 6: Maximize team advancement while respecting terrain limits
             total_advancement = calculate_total_advancement(engine, move)
             score += total_advancement * 10
+
+            # Additional bonus for card efficiency (advancement per card)
+            cards_used = len(move.cards) if move.cards else 0
+            if cards_used > 0 and total_advancement > 0:
+                efficiency = total_advancement / cards_used
+                score += efficiency * 5  # Bonus for efficient card usage
 
             # For team moves, check if we're respecting terrain limits
             if move.action_type in [ActionType.TEAM_PULL, ActionType.TEAM_DRAFT]:

@@ -33,6 +33,9 @@ python example_usage.py
 # Play interactively against bots (press 'r' during play to view card reference)
 python play.py
 
+# Replay a game from logs with full visualization
+python game_analyzer.py game_0.json
+
 # Run comprehensive unit tests for all game rules
 python test_game_rules.py
 ```
@@ -51,6 +54,7 @@ python test_game_rules.py
 | `generate_report.py` | Standalone report generator |
 | `example_usage.py` | Usage examples |
 | `play.py` | Interactive play against bots (terminal UI) |
+| `game_analyzer.py` | Replay games from logs with full visualization |
 | `test_game_rules.py` | Comprehensive unit tests: game rules, mechanics, agents, tournament features |
 
 Output goes to `game_logs/` (gitignored).
@@ -157,9 +161,9 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 - Score sprint/finish points when possible
 - Hand management (TeamCar when ≤6 cards and no efficient moves)
 - Prefer efficient moves (TeamDraft > Draft > TeamPull)
-- Group with team riders
+- Group with team riders (only when moving forward to join riders ahead)
 - When El Patron, position with opponents
-- Maximize team advancement respecting terrain limits
+- Maximize team advancement respecting terrain limits (with bonus for card efficiency)
 - TeamCar if any isolated rider lacks good options
 
 ## Code Conventions
