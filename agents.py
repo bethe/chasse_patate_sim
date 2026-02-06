@@ -218,7 +218,10 @@ class LeadRiderAgent(Agent):
             non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
             if non_team_car:
                 return max(non_team_car, key=lambda m: calculate_move_distance(engine, m))
-        
+            # If only TeamCar moves are available, use one
+            team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+            return team_car_moves[0] if team_car_moves else None
+
         # Pick move that advances lead rider most
         return max(lead_moves, key=lambda m: calculate_move_distance(engine, m))
 
