@@ -962,7 +962,7 @@ class TobiBotAgent(Agent):
     4. Group with team riders
     5. When El Patron, position with opponents
     6. Maximize team advancement respecting terrain limits
-    7. TeamCar if lead rider is isolated without good options
+    7. TeamCar if any isolated rider lacks good options
     """
 
     def __init__(self, player_id: int):
@@ -1020,29 +1020,30 @@ class TobiBotAgent(Agent):
             # Apply priority 4-6 to select best TeamPull
             return self._select_best_move(team_pull_moves, engine, player)
 
-        # Priority 7: If lead rider among eligible riders is isolated, consider TeamCar
-        eligible_riders_list = eligible_riders if eligible_riders is not None else player.riders
-        if eligible_riders_list:
-            lead_rider_eligible = max(eligible_riders_list, key=lambda r: r.position)
-            if self._is_rider_isolated(lead_rider_eligible, engine, player):
-                # Check if lead rider can draft or advance >4 fields
-                lead_moves = [m for m in valid_moves if m.rider == lead_rider_eligible]
-                can_draft = any(m.action_type in [ActionType.DRAFT, ActionType.TEAM_DRAFT] for m in lead_moves)
-                can_advance_far = any(calculate_move_distance(engine, m) > 4 for m in lead_moves
-                                     if m.action_type in [ActionType.PULL, ActionType.ATTACK])
-
-                if not can_draft and not can_advance_far:
-                    team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
-                    if team_car_moves:
-                        worst_card = choose_card_to_discard(player)
-                        if worst_card:
-                            team_car_moves[0].cards = [worst_card]
-                        return team_car_moves[0]
-
         # Apply priorities 4-6 to remaining moves
         non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
         if non_team_car:
             return self._select_best_move(non_team_car, engine, player)
+
+        # Priority 7: If any isolated rider lacks good options, consider TeamCar
+        eligible_riders_list = eligible_riders if eligible_riders is not None else player.riders
+        if eligible_riders_list:
+            # Check if any eligible rider is isolated
+            for rider in eligible_riders_list:
+                if self._is_rider_isolated(rider, engine, player):
+                    # Check if this rider can draft or advance >4 fields
+                    rider_moves = [m for m in valid_moves if m.rider == rider]
+                    can_draft = any(m.action_type in [ActionType.DRAFT, ActionType.TEAM_DRAFT] for m in rider_moves)
+                    can_advance_far = any(calculate_move_distance(engine, m) > 4 for m in rider_moves
+                                         if m.action_type in [ActionType.PULL, ActionType.ATTACK])
+
+                    if not can_draft and not can_advance_far:
+                        team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+                        if team_car_moves:
+                            worst_card = choose_card_to_discard(player)
+                            if worst_card:
+                                team_car_moves[0].cards = [worst_card]
+                            return team_car_moves[0]
 
         # Fallback
         return valid_moves[0]

@@ -462,6 +462,73 @@ class TestGameEndConditions(unittest.TestCase):
         # Game should not be over
         self.assertFalse(state.check_game_over())
 
+    def test_game_ends_when_player_stuck(self):
+        """Game should end when a player advances less than 5 fields in 5 rounds"""
+        state = GameState(num_players=2, tile_config=[1, 4, 5])
+
+        # Simulate 5 rounds where Player 0 barely moves
+        # Player 0: riders at positions 10, 11, 12
+        state.players[0].riders[0].position = 10
+        state.players[0].riders[1].position = 11
+        state.players[0].riders[2].position = 12
+        # Player 1: riders moving normally
+        state.players[1].riders[0].position = 20
+        state.players[1].riders[1].position = 21
+        state.players[1].riders[2].position = 22
+
+        # Simulate 5 rounds with minimal movement for Player 0
+        for round_num in range(1, 6):
+            state.current_round = round_num
+            state.start_new_round()
+
+            # Player 0 advances by only 0.5 fields total per round (very stuck)
+            if round_num <= 3:
+                state.players[0].riders[0].position += 0  # No movement
+                state.players[0].riders[1].position += 1  # Minimal movement
+                state.players[0].riders[2].position += 0  # No movement
+
+            # Player 1 moves normally (5+ fields per round)
+            state.players[1].riders[0].position += 2
+            state.players[1].riders[1].position += 2
+            state.players[1].riders[2].position += 2
+
+        # After 5 rounds, check if game detects Player 0 as stuck
+        # Player 0 total advancement: (10+11+12) = 33 -> (10+14+12) = 36 = only 3 fields in 5 rounds
+        self.assertTrue(state.check_game_over())
+        reason = state.get_game_over_reason()
+        self.assertIsNotNone(reason)
+        self.assertIn("player_stuck", reason)
+        self.assertIn("Player 0", reason)
+
+    def test_game_not_stuck_with_sufficient_advancement(self):
+        """Game should not end if all players advance 5+ fields over 5 rounds"""
+        state = GameState(num_players=2, tile_config=[1, 4, 5])
+
+        # Initial positions
+        state.players[0].riders[0].position = 10
+        state.players[0].riders[1].position = 11
+        state.players[0].riders[2].position = 12
+        state.players[1].riders[0].position = 20
+        state.players[1].riders[1].position = 21
+        state.players[1].riders[2].position = 22
+
+        # Simulate 5 rounds with all players advancing well
+        for round_num in range(1, 6):
+            state.current_round = round_num
+            state.start_new_round()
+
+            # Both players advance 6+ fields total per round
+            state.players[0].riders[0].position += 2
+            state.players[0].riders[1].position += 2
+            state.players[0].riders[2].position += 2
+
+            state.players[1].riders[0].position += 2
+            state.players[1].riders[1].position += 2
+            state.players[1].riders[2].position += 2
+
+        # Game should not be stuck - both players advanced 30 fields in 5 rounds
+        self.assertFalse(state.check_game_over())
+
 
 class TestCardMechanics(unittest.TestCase):
     """Test card drawing, reshuffling, and initial dealing"""

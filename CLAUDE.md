@@ -123,7 +123,8 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 
 ### Game End Conditions
 - 5 riders finish
-- One player has all 3 riders at finish (NEW)
+- One player has all 3 riders at finish
+- Player stuck (any player advances < 5 fields over 5 rounds)
 - Round limit (150) hit
 - All cards run out
 
@@ -154,7 +155,7 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 - Group with team riders
 - When El Patron, position with opponents
 - Maximize team advancement respecting terrain limits
-- TeamCar if lead rider isolated without good options
+- TeamCar if any isolated rider lacks good options
 
 ## Code Conventions
 

@@ -139,7 +139,8 @@ Riders have maximum fields per round on certain terrain:
 ### Game End Conditions
 1. **5 riders finished** - 5+ riders crossed finish line
 2. **Team finished** - One player has all 3 riders at finish
-3. **Out of cards** - Deck empty and all hands empty
+3. **Player stuck** - Any player advances < 5 fields over 5 rounds
+4. **Out of cards** - Deck empty and all hands empty
 
 ## Available AI Agents
 
@@ -188,7 +189,7 @@ Riders have maximum fields per round on certain terrain:
 4. Advance to fields with team riders (grouping)
 5. When El Patron, position with opponent riders
 6. Maximize team advancement while respecting terrain limits
-7. TeamCar if lead rider is isolated without good options
+7. TeamCar if any isolated rider lacks good options
 
 ## Simulation API
 
