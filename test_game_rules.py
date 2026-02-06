@@ -1342,6 +1342,157 @@ class TestTobiBotAgent(unittest.TestCase):
         is_isolated = self.tobibot._is_rider_isolated(isolated_rider, self.engine, self.player)
         self.assertFalse(is_isolated)
 
+    def test_priority7_eligible_riders_only(self):
+        """Test Priority 7 bug fix: Should only check lead among ELIGIBLE riders
+
+        This tests the fix for the infinite TeamCar loop bug where TobiBot would
+        check the overall lead rider (across all riders) instead of the lead among
+        eligible riders. When the overall lead had already moved, Priority 7 would
+        incorrectly trigger TeamCar for remaining riders.
+
+        Scenario: Riders at positions 10, 11, 44
+        - Rider at 44 moves first (lead rider)
+        - Riders at 10, 11 should move normally, NOT use TeamCar
+        """
+        # Set up the exact scenario from the bug: riders at positions 10, 11, 44
+        self.player.riders[0].position = 10  # Rouleur
+        self.player.riders[1].position = 11  # Sprinter
+        self.player.riders[2].position = 44  # Climber (lead rider)
+
+        # Give sufficient mixed cards (>6 so Priority 2 doesn't trigger)
+        # Include cards for each rider type so they can all move
+        self.player.hand = [
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.SPRINTER, 7),
+            Card(CardType.SPRINTER, 7),
+            Card(CardType.CLIMBER, 4),
+            Card(CardType.CLIMBER, 4),
+            Card(CardType.ENERGY, 1),
+            Card(CardType.ENERGY, 1),
+        ]
+
+        # Clear last move so no drafting is available
+        self.state.last_move = None
+
+        # Simulate that rider at position 44 has already moved this round
+        # Only riders at positions 10 and 11 are eligible (rider at 44 already moved)
+
+        # Test rider at position 11 (should be lead among eligible riders)
+        move_rider_11 = self.tobibot.choose_move(self.engine, self.player, [self.player.riders[1]])
+        self.assertIsNotNone(move_rider_11)
+        # Should NOT be TeamCar (the bug would cause this)
+        self.assertNotEqual(move_rider_11.action_type, ActionType.TEAM_CAR,
+                           "TobiBot should not use TeamCar for rider at position 11 - "
+                           "this indicates the Priority 7 bug is present")
+        # Should be a movement action
+        self.assertIn(move_rider_11.action_type, [ActionType.PULL, ActionType.ATTACK, ActionType.TEAM_PULL])
+
+        # Test rider at position 10
+        move_rider_10 = self.tobibot.choose_move(self.engine, self.player, [self.player.riders[0]])
+        self.assertIsNotNone(move_rider_10)
+        # Should NOT be TeamCar
+        self.assertNotEqual(move_rider_10.action_type, ActionType.TEAM_CAR,
+                           "TobiBot should not use TeamCar for rider at position 10 - "
+                           "this indicates the Priority 7 bug is present")
+        # Should be a movement action
+        self.assertIn(move_rider_10.action_type, [ActionType.PULL, ActionType.ATTACK, ActionType.TEAM_PULL])
+
+    def test_no_infinite_teamcar_loop(self):
+        """Integration test: Verify TobiBot doesn't get stuck in infinite TeamCar loop
+
+        This test runs multiple rounds with riders spread out to ensure TobiBot
+        doesn't repeatedly use TeamCar instead of moving riders forward.
+        """
+        from agents import create_agent
+
+        # Set up game with TobiBot
+        state = GameState(num_players=2, tile_config=[1, 4, 5])
+        engine = GameEngine(state)
+        tobibot = create_agent('tobibot', 0)
+        player = state.players[0]
+
+        # Position riders spread out like in the bug scenario
+        player.riders[0].position = 10  # Rouleur
+        player.riders[1].position = 11  # Sprinter
+        player.riders[2].position = 44  # Climber
+
+        # Give sufficient mixed cards for all rider types
+        player.hand = [
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.SPRINTER, 7),
+            Card(CardType.SPRINTER, 7),
+            Card(CardType.CLIMBER, 4),
+            Card(CardType.CLIMBER, 4),
+            Card(CardType.ENERGY, 1),
+            Card(CardType.ENERGY, 1),
+            Card(CardType.ENERGY, 1),
+            Card(CardType.ENERGY, 1),
+        ]
+
+        # Track TeamCar usage over multiple rounds
+        teamcar_count = 0
+        movement_count = 0
+        total_moves = 0
+
+        # Simulate 5 rounds of moves
+        for _ in range(5):
+            # Sort riders by position (descending) to simulate proper turn order
+            # Leaders move first
+            sorted_riders = sorted(player.riders, key=lambda r: r.position, reverse=True)
+
+            # Each rider moves once per round
+            for rider in sorted_riders:
+                move = tobibot.choose_move(engine, player, [rider])
+                if move:
+                    total_moves += 1
+                    if move.action_type == ActionType.TEAM_CAR:
+                        teamcar_count += 1
+                        # Execute TeamCar to update hand
+                        if not move.cards:
+                            move.cards = [player.hand[0]] if player.hand else []
+                        engine.execute_move(move)
+                    else:
+                        movement_count += 1
+                        # Execute movement
+                        engine.execute_move(move)
+
+                    # Replenish mixed cards if getting low
+                    if len(player.hand) < 5:
+                        player.hand.extend([
+                            Card(CardType.ROULEUR, 5),
+                            Card(CardType.SPRINTER, 7),
+                            Card(CardType.CLIMBER, 4),
+                            Card(CardType.ENERGY, 1),
+                            Card(CardType.ENERGY, 1),
+                        ])
+
+        # After 5 rounds (15 moves), TeamCar should be minority
+        # With the bug, TeamCar would be ~70-90% (10-13 out of 15 moves)
+        # With the fix, TeamCar should be < 50% (most moves should be actual movement)
+        teamcar_percentage = (teamcar_count / total_moves) * 100 if total_moves > 0 else 0
+
+        self.assertLess(teamcar_percentage, 50,
+                       f"TobiBot used TeamCar {teamcar_percentage:.1f}% of the time "
+                       f"({teamcar_count}/{total_moves} moves). This suggests the infinite "
+                       f"TeamCar loop bug may still be present. Expected < 50%.")
+
+        # Most importantly: Verify riders actually moved forward significantly
+        # With the bug, riders would barely move or not move at all
+        self.assertGreater(player.riders[0].position, 10,
+                          "Rider at position 10 should have advanced")
+        self.assertGreater(player.riders[1].position, 11,
+                          "Rider at position 11 should have advanced")
+
+        # At least one of the non-lead riders should have advanced by 5+ positions
+        # to show they're actually moving, not just stuck
+        total_advancement = (player.riders[0].position - 10) + (player.riders[1].position - 11)
+        self.assertGreater(total_advancement, 8,
+                          f"Non-lead riders should have advanced significantly. "
+                          f"Total advancement: {total_advancement} fields. "
+                          f"With the bug, this would be near zero.")
+
     def test_tobibot_competes_full_game(self):
         """Integration test: TobiBot can complete a full game"""
         from agents import create_agent
