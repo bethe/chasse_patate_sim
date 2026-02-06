@@ -544,7 +544,7 @@ class GameState:
         1. Five riders have reached the finish line
         2. One player has all 3 riders at the finish
         3. All players have run out of cards (and deck is empty)
-        4. Any player is stuck (< 5 total advancement over last 5 rounds)
+        4. Any player is stuck (0 total advancement over last 5 consecutive rounds)
         """
         try:
             finish_position = int(self.track_length - 1)
@@ -575,7 +575,7 @@ class GameState:
                     self.game_over = True
                     return True
 
-            # Condition 4: Check if any player is stuck (< 5 advancement over 5 rounds)
+            # Condition 4: Check if any player is stuck (0 advancement over 5 consecutive rounds)
             if len(self.round_positions_history) >= 5:
                 # Check each player's advancement over last 5 rounds
                 for player in self.players:
@@ -589,13 +589,13 @@ class GameState:
                     # Calculate advancement
                     advancement = current_total_position - positions_5_rounds_ago
 
-                    # If any player has advanced less than 5 fields total, game is stuck
-                    if advancement < 5:
+                    # If any player has 0 advancement over 5 rounds, game is stuck
+                    if advancement == 0:
                         self.game_over = True
                         return True
 
             return False
-            
+
         except Exception as e:
             # If there's any error, log it but don't crash
             print(f"Warning: Error in check_game_over: {e}")
@@ -624,7 +624,7 @@ class GameState:
         if len(self.deck) == 0 and all(len(p.hand) == 0 for p in self.players):
             return "players_out_of_cards"
 
-        # Check if a player is stuck (< 5 advancement over 5 rounds)
+        # Check if a player is stuck (0 advancement over 5 consecutive rounds)
         if len(self.round_positions_history) >= 5:
             for player in self.players:
                 player_id = player.player_id
@@ -632,8 +632,8 @@ class GameState:
                 current_total_position = sum(rider.position for rider in player.riders)
                 advancement = current_total_position - positions_5_rounds_ago
 
-                if advancement < 5:
-                    return f"player_stuck (Player {player_id} advanced only {advancement} fields in 5 rounds)"
+                if advancement == 0:
+                    return f"player_stuck (Player {player_id} had 0 advancement in 5 consecutive rounds)"
 
         return "unknown"
     

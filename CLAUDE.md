@@ -129,7 +129,7 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 ### Game End Conditions
 - 5 riders finish
 - One player has all 3 riders at finish
-- Player stuck (any player advances < 5 fields over 5 rounds)
+- Player stuck (any player has 0 total advancement over 5 consecutive rounds)
 - Round limit (150) hit
 - All cards run out
 

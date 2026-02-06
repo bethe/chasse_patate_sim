@@ -142,7 +142,7 @@ Riders have maximum fields per round on certain terrain:
 ### Game End Conditions
 1. **5 riders finished** - 5+ riders crossed finish line
 2. **Team finished** - One player has all 3 riders at finish
-3. **Player stuck** - Any player advances < 5 fields over 5 rounds
+3. **Player stuck** - Any player has 0 total advancement over 5 consecutive rounds
 4. **Out of cards** - Deck empty and all hands empty
 
 ## Available AI Agents
