@@ -20,7 +20,7 @@ def example_single_game():
     # Run one game with a greedy agent vs balanced agent
     from agents import create_agent
     agents = [
-        create_agent('greedy', 0),
+        create_agent('marc_soler', 0),
         create_agent('balanced', 1)
     ]
     
@@ -38,7 +38,7 @@ def example_batch_simulation():
     
     # Run 50 games with 3 different agents
     results = simulator.run_batch_simulation(
-        agent_types=['greedy', 'balanced', 'aggressive'],
+        agent_types=['marc_soler', 'balanced', 'aggressive'],
         num_games=50
     )
     
@@ -70,7 +70,7 @@ def example_tournament():
     # Test these agent types against each other
     agent_types = [
         'random',
-        'greedy', 
+        'marc_soler', 
         'lead_rider',
         'balanced',
         'sprint_hunter'
@@ -120,7 +120,7 @@ def example_full_analysis():
     
     print("\nRunning 100 games for analysis...")
     results = simulator.run_batch_simulation(
-        agent_types=['greedy', 'adaptive'],
+        agent_types=['marc_soler', 'adaptive'],
         num_games=100
     )
     
