@@ -256,14 +256,16 @@ class BalancedAgent(Agent):
         
         # Filter moves for behind rider (excluding TeamCar)
         behind_moves = [m for m in valid_moves if m.rider == behind_rider and m.action_type != ActionType.TEAM_CAR]
-        if not behind_moves:
-            # If no moves available, take best move overall
-            non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
-            if non_team_car:
-                return max(non_team_car, key=lambda m: calculate_move_distance(engine, m))
-        
-        # Pick move that advances behind rider most
-        return max(behind_moves, key=lambda m: calculate_move_distance(engine, m))
+        if behind_moves:
+            return max(behind_moves, key=lambda m: calculate_move_distance(engine, m))
+
+        # If no moves for behind rider, take best move overall
+        non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
+        if non_team_car:
+            return max(non_team_car, key=lambda m: calculate_move_distance(engine, m))
+
+        # Fallback to any available move
+        return valid_moves[0]
 
 
 class SprintHunterAgent(Agent):

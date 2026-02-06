@@ -589,15 +589,28 @@ class GameEngine:
                 'new_position': drafter_new_pos
             })
         
-        # Check sprint points for lead rider only
+        # Check sprint points for ALL riders (lead + drafters)
         points_earned = 0
+
+        # Lead rider
         for pos in range(old_position + 1, new_position + 1):
             points = self._check_sprint_scoring(move.rider, pos)
             points_earned += points
-        
+
+        # Drafting riders
+        for drafter_info in drafting_results:
+            drafter_old_pos = drafter_info['old_position']
+            drafter_new_pos = drafter_info['new_position']
+            drafter_rider = next((r for r in player.riders
+                                 if f"P{r.player_id}R{r.rider_id}" == drafter_info['rider']), None)
+            if drafter_rider:
+                for pos in range(drafter_old_pos + 1, drafter_new_pos + 1):
+                    points = self._check_sprint_scoring(drafter_rider, pos)
+                    points_earned += points
+
         if points_earned > 0:
             player.points += points_earned
-        
+
         # Check checkpoints for ALL riders (lead + drafters)
         cards_drawn = 0
         checkpoints_reached = []
@@ -695,10 +708,25 @@ class GameEngine:
         new_tile = self.state.get_tile_at_position(new_position)
         new_terrain = new_tile.terrain.value if new_tile else "Unknown"
         
+        # Check sprint points for ALL riders (primary + drafters)
+        points_earned = 0
+        for drafter_info in drafting_results:
+            drafter_old_pos = drafter_info['old_position']
+            drafter_new_pos = drafter_info['new_position']
+            drafter_rider = next((r for r in player.riders
+                                 if f"P{r.player_id}R{r.rider_id}" == drafter_info['rider']), None)
+            if drafter_rider:
+                for pos in range(drafter_old_pos + 1, drafter_new_pos + 1):
+                    points = self._check_sprint_scoring(drafter_rider, pos)
+                    points_earned += points
+
+        if points_earned > 0:
+            player.points += points_earned
+
         # Check checkpoints for ALL riders (primary + drafters)
         cards_drawn = 0
         checkpoints_reached = []
-        
+
         # all_drafting_riders already contains [primary + drafting_riders]
         for drafter_info in drafting_results:
             drafter_old_pos = drafter_info['old_position']

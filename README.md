@@ -1,6 +1,6 @@
 # Chasse Patate - Cycling Board Game Simulator
 
-A comprehensive simulation framework for testing and balancing the Chasse Patate cycling board game through AI agent play.
+A simulation framework for testing and balancing the Chasse Patate cycling board game through AI agent play. Also supports interactive human-vs-bot play.
 
 ## Overview
 
@@ -111,10 +111,10 @@ Riders have maximum fields per round on certain terrain:
 - **Finish Line**: 12/8/5/3/1 points for top 5 finishers
 - Points awarded by arrival order
 
-### Checkpoints
-- Every 10 fields (10, 20, 30, ...)
-- Each rider crossing draws 3 cards
-- In team moves, EACH rider crossing gets 3 cards
+1. Choose number of players (2-5)
+2. Assign each slot as "human" or a bot type
+3. On your turn: pick a rider, then an action, then cards
+4. Press `b` to go back to the previous decision at any step
 
 ### Game End Conditions
 1. **5 riders finished** - 5+ riders crossed finish line
@@ -159,7 +159,7 @@ Riders have maximum fields per round on certain terrain:
 - Checkpoint card drawing
 - Hand management (TeamCar when needed)
 
-## Usage Examples
+## Simulation API
 
 ### Interactive Play
 
@@ -233,7 +233,7 @@ from game_engine import GameEngine, Move
 from game_state import Player, Rider
 from typing import List, Optional
 
-class CustomAgent(Agent):
+class MyAgent(Agent):
     def __init__(self, player_id: int):
         super().__init__(player_id, "Custom")
 

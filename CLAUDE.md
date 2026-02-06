@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Chasse Patate - a cycling board game balance simulator. Runs thousands of AI-vs-AI games to detect dominant strategies and balance issues.
+Chasse Patate — a cycling board game balance simulator. Runs thousands of AI-vs-AI games to detect dominant strategies and balance issues.
 
 ## Tech Stack
 
