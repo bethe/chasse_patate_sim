@@ -18,14 +18,15 @@ This simulator allows you to:
 .
 ├── game_state.py          # Core game state, cards, El Patron rule
 ├── game_engine.py         # Game rules, move validation, terrain limits
-├── agents.py              # AI agent implementations (14 types)
+├── agents.py              # AI agent implementations (15 types)
 ├── simulator.py           # Game simulation and logging
 ├── analysis.py            # Statistical analysis tools
 ├── play.py                # Interactive play mode
 ├── quick_test.py          # Fast balance testing script
+├── run_tournament.py      # Multi-player tournament runner (2/3/4 players)
 ├── example_usage.py       # Example scripts and tutorials
 ├── generate_report.py     # Standalone report generation
-├── test_terrain_limits.py # Unit tests for terrain limits
+├── test_game_rules.py     # Comprehensive unit tests (80+ tests)
 └── game_logs/             # Generated game logs (created automatically)
 ```
 
@@ -52,6 +53,28 @@ python quick_test.py
 ```
 
 Runs 50 games and shows win rates, score distribution, action usage, and game over reasons.
+
+### Run Comprehensive Tournament
+
+```bash
+python run_tournament.py
+```
+
+Runs a comprehensive multi-player tournament testing all agent combinations:
+- **2-player games**: All C(5,2) = 10 combinations × 10 games = 100 games
+- **3-player games**: All C(5,3) = 10 combinations × 10 games = 100 games
+- **4-player games**: All C(5,4) = 5 combinations × 10 games = 50 games
+- **Total**: 250 games (~10-20 minutes)
+- **Position alternation**: Games are distributed across all permutations to minimize position bias
+
+Output includes:
+- Overall win rates and average scores by agent
+- Head-to-head matchup matrix (2-player)
+- **Position bias analysis** (wins by player position)
+- Position statistics after each combination completes
+- Results broken down by player count
+- Game length and end reason statistics
+- Full CSV export: `game_logs/tournament_results_TIMESTAMP.csv`
 
 ## Game Rules
 
@@ -119,11 +142,12 @@ Riders have maximum fields per round on certain terrain:
 ### Game End Conditions
 1. **5 riders finished** - 5+ riders crossed finish line
 2. **Team finished** - One player has all 3 riders at finish
-3. **Out of cards** - Deck empty and all hands empty
+3. **Player stuck** - Any player has 0 total advancement over 5 consecutive rounds
+4. **Out of cards** - Deck empty and all hands empty
 
 ## Available AI Agents
 
-14 different AI agent types:
+15 different AI agent types:
 
 | Agent          | Strategy                                      |
 |----------------|-----------------------------------------------|
@@ -137,7 +161,9 @@ Riders have maximum fields per round on certain terrain:
 | adaptive       | Adjusts strategy based on terrain             |
 | wheelsucker    | Prioritizes drafting opportunities            |
 | **gemini**     | Balanced scoring: advancement + points + efficiency |
+| **chatgpt**    | Balanced agent valuing steady advancement and card efficiency |
 | **claudebot**  | Multi-factor: terrain awareness, sprint targeting, card economy |
+| **tobibot**    | Prioritized strategy: scoring, hand management, efficient moves, grouping |
 | rouleur_focus  | Prefers playing Rouleur cards                 |
 | sprinter_focus | Prefers playing Sprinter cards                |
 | climber_focus  | Prefers playing Climber cards                 |
@@ -158,6 +184,15 @@ Riders have maximum fields per round on certain terrain:
 - Card efficiency (penalizes card usage)
 - Checkpoint card drawing
 - Hand management (TeamCar when needed)
+
+**TobiBot** - Prioritized decision-making system:
+1. Score points at sprints/finish when possible (maximize points)
+2. Hand management: TeamCar when ≤6 cards unless efficient move available (>1 field/card)
+3. Prefer efficient moves: TeamDraft > Draft > TeamPull
+4. Advance to fields with team riders (grouping)
+5. When El Patron, position with opponent riders
+6. Maximize team advancement while respecting terrain limits
+7. TeamCar if any isolated rider lacks good options
 
 ## Simulation API
 
@@ -280,10 +315,20 @@ Generated reports include:
 ## Running Tests
 
 ```bash
-python test_terrain_limits.py
+python test_game_rules.py
 ```
 
-Runs 13 unit tests for terrain limit functionality.
+Runs 80+ comprehensive unit tests covering:
+- Terrain limits
+- El Patron rule and turn order
+- Game end conditions
+- Card mechanics and move validation
+- Drafting rules
+- Sprint and finish scoring
+- Checkpoint mechanics
+- Round-based game flow
+- Agent behavior (TobiBot)
+- Tournament position alternation
 
 ## Recent Updates
 

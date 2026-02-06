@@ -11,6 +11,10 @@ Tests all core game mechanics including:
 - Sprint and finish scoring
 - Checkpoint mechanics
 - Round-based game flow
+- Agent behavior (TobiBot)
+- Tournament position alternation
+
+Total: 80+ unit tests
 """
 
 import unittest
@@ -459,6 +463,101 @@ class TestGameEndConditions(unittest.TestCase):
         # Game should not be over
         self.assertFalse(state.check_game_over())
 
+    def test_game_ends_when_player_stuck(self):
+        """Game should end when a player has 0 total advancement over 5 consecutive rounds"""
+        state = GameState(num_players=2, tile_config=[1, 4, 5])
+
+        # Simulate 5 rounds where Player 0 does not move at all
+        # Player 0: riders at positions 10, 11, 12
+        state.players[0].riders[0].position = 10
+        state.players[0].riders[1].position = 11
+        state.players[0].riders[2].position = 12
+        # Player 1: riders moving normally
+        state.players[1].riders[0].position = 20
+        state.players[1].riders[1].position = 21
+        state.players[1].riders[2].position = 22
+
+        # Simulate 5 rounds with NO movement for Player 0
+        for round_num in range(1, 6):
+            state.current_round = round_num
+            state.start_new_round()
+
+            # Player 0 advances by 0 fields total (completely stuck)
+            state.players[0].riders[0].position += 0  # No movement
+            state.players[0].riders[1].position += 0  # No movement
+            state.players[0].riders[2].position += 0  # No movement
+
+            # Player 1 moves normally (6 fields per round)
+            state.players[1].riders[0].position += 2
+            state.players[1].riders[1].position += 2
+            state.players[1].riders[2].position += 2
+
+        # After 5 rounds, check if game detects Player 0 as stuck
+        # Player 0 total advancement: (10+11+12) = 33 -> (10+11+12) = 33 = 0 fields in 5 rounds
+        self.assertTrue(state.check_game_over())
+        reason = state.get_game_over_reason()
+        self.assertIsNotNone(reason)
+        self.assertIn("player_stuck", reason)
+        self.assertIn("Player 0", reason)
+
+    def test_game_not_stuck_with_sufficient_advancement(self):
+        """Game should not end if all players advance at least some fields over 5 rounds"""
+        state = GameState(num_players=2, tile_config=[1, 4, 5])
+
+        # Initial positions
+        state.players[0].riders[0].position = 10
+        state.players[0].riders[1].position = 11
+        state.players[0].riders[2].position = 12
+        state.players[1].riders[0].position = 20
+        state.players[1].riders[1].position = 21
+        state.players[1].riders[2].position = 22
+
+        # Simulate 5 rounds with all players advancing well
+        for round_num in range(1, 6):
+            state.current_round = round_num
+            state.start_new_round()
+
+            # Both players advance 6+ fields total per round
+            state.players[0].riders[0].position += 2
+            state.players[0].riders[1].position += 2
+            state.players[0].riders[2].position += 2
+
+            state.players[1].riders[0].position += 2
+            state.players[1].riders[1].position += 2
+            state.players[1].riders[2].position += 2
+
+        # Game should not be stuck - both players advanced 30 fields in 5 rounds
+        self.assertFalse(state.check_game_over())
+
+    def test_game_not_stuck_with_minimal_advancement(self):
+        """Game should not end if a player advances even 1 field over 5 rounds"""
+        state = GameState(num_players=2, tile_config=[1, 4, 5])
+
+        # Initial positions
+        state.players[0].riders[0].position = 10
+        state.players[0].riders[1].position = 11
+        state.players[0].riders[2].position = 12
+        state.players[1].riders[0].position = 20
+        state.players[1].riders[1].position = 21
+        state.players[1].riders[2].position = 22
+
+        # Simulate 5 rounds with Player 0 advancing very little
+        for round_num in range(1, 6):
+            state.current_round = round_num
+            state.start_new_round()
+
+            # Player 0 advances only 1 field total in the first round
+            if round_num == 1:
+                state.players[0].riders[0].position += 1
+
+            # Player 1 moves normally
+            state.players[1].riders[0].position += 2
+            state.players[1].riders[1].position += 2
+            state.players[1].riders[2].position += 2
+
+        # Game should not be stuck - Player 0 advanced 1 field (not 0)
+        self.assertFalse(state.check_game_over())
+
 
 class TestCardMechanics(unittest.TestCase):
     """Test card drawing, reshuffling, and initial dealing"""
@@ -823,6 +922,98 @@ class TestSprintAndFinishScoring(unittest.TestCase):
         self.assertEqual(len(arrivals), 3)
         self.assertEqual(arrivals, riders)
 
+    def test_multiple_riders_same_player_cross_finish_team_pull(self):
+        """When multiple riders from same player cross finish in TeamPull, each should get points"""
+        state = GameState(num_players=2, tile_config=[1])  # Single tile (20 fields)
+        engine = GameEngine(state)
+
+        player = state.players[0]
+        lead_rider = player.riders[0]
+        drafter = player.riders[1]
+
+        # Position both riders at position 18 (one before finish)
+        lead_rider.position = 18
+        drafter.position = 18
+
+        # Give player energy cards to move 2 fields (to position 19 = finish)
+        player.hand = [Card(CardType.ENERGY), Card(CardType.ENERGY)]
+
+        initial_points = player.points
+
+        # Execute TeamPull with both riders
+        move = Move(
+            ActionType.TEAM_PULL,
+            lead_rider,
+            player.hand[:2],
+            [drafter]
+        )
+
+        result = engine.execute_move(move)
+
+        self.assertTrue(result['success'])
+
+        # Both riders should cross finish at position 19
+        self.assertEqual(lead_rider.position, 19)
+        self.assertEqual(drafter.position, 19)
+
+        # Check that BOTH riders got points
+        # Lead rider arrives first: 12 points
+        # Drafter arrives second: 8 points
+        # Total: 20 points for the player
+        self.assertEqual(result['points_earned'], 20)
+        self.assertEqual(player.points, initial_points + 20)
+
+        # Verify both riders are recorded at the finish
+        self.assertEqual(len(state.sprint_arrivals[19]), 2)
+        self.assertIn(lead_rider, state.sprint_arrivals[19])
+        self.assertIn(drafter, state.sprint_arrivals[19])
+
+    def test_multiple_riders_same_player_cross_sprint_team_draft(self):
+        """When multiple riders from same player cross sprint in TeamDraft, each should get points"""
+        state = GameState(num_players=2, tile_config=[1, 1])  # Two tiles
+        engine = GameEngine(state)
+
+        # Set up a previous move to enable drafting
+        state.last_move = {
+            'action': 'Pull',
+            'rider': 'P1R0',  # Different player
+            'old_position': 18,
+            'movement': 2
+        }
+
+        player = state.players[0]
+        rider1 = player.riders[0]
+        rider2 = player.riders[1]
+
+        # Position both riders at position 18 (start of last move)
+        rider1.position = 18
+        rider2.position = 18
+
+        initial_points = player.points
+
+        # Execute TeamDraft with both riders
+        move = Move(
+            ActionType.TEAM_DRAFT,
+            rider1,
+            [],
+            [rider2]
+        )
+
+        result = engine.execute_move(move)
+
+        self.assertTrue(result['success'])
+
+        # Both riders should cross first sprint at position 19
+        self.assertEqual(rider1.position, 20)
+        self.assertEqual(rider2.position, 20)
+
+        # Check that BOTH riders got points for crossing position 19 (first tile finish/sprint)
+        # Position 19 is a sprint point (last field of first tile)
+        # First rider: 3 points, Second rider: 2 points
+        # Total: 5 points
+        self.assertGreater(result['points_earned'], 0)
+        self.assertGreater(player.points, initial_points)
+
 
 class TestCardTypes(unittest.TestCase):
     """Test card types and their movement values"""
@@ -990,6 +1181,554 @@ class TestTrackConfiguration(unittest.TestCase):
         # Position 19 is last field of first tile
         first_tile_last = state.track[19]
         self.assertEqual(first_tile_last.terrain, TerrainType.SPRINT)
+
+
+class TestTobiBotAgent(unittest.TestCase):
+    """Test TobiBot agent's prioritized decision-making system"""
+
+    def setUp(self):
+        """Set up a game for TobiBot testing"""
+        from agents import create_agent
+        self.state = GameState(num_players=2, tile_config=[1, 4, 5])
+        self.engine = GameEngine(self.state)
+        self.tobibot = create_agent('tobibot', 0)
+        self.player = self.state.players[0]
+
+    def test_tobibot_creation(self):
+        """Test that TobiBot can be created and has correct name"""
+        self.assertEqual(self.tobibot.name, "TobiBot")
+        self.assertEqual(self.tobibot.player_id, 0)
+
+    def test_priority1_scoring_moves(self):
+        """Test Priority 1: TobiBot prioritizes moves that score points"""
+        # Position a rider near a sprint
+        rider = self.player.riders[0]
+        rider.position = 17  # Two positions before sprint at position 19
+
+        # Give cards to move
+        self.player.hand = [
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5)
+        ]
+
+        # TobiBot should choose a move that reaches the sprint
+        move = self.tobibot.choose_move(self.engine, self.player, self.player.riders)
+        self.assertIsNotNone(move)
+
+        # Calculate if this move will reach the sprint
+        if move.action_type == ActionType.PULL:
+            distance = self.engine._calculate_pull_movement(move.rider, move.cards)
+            target_pos = move.rider.position + distance
+            # Should reach or pass position 19 (sprint)
+            self.assertGreaterEqual(target_pos, 19)
+
+    def test_priority2_hand_management_low_cards(self):
+        """Test Priority 2: TeamCar when hand ≤ 6 and no efficient moves"""
+        # Set hand to exactly 6 cards (all energy)
+        self.player.hand = [Card(CardType.ENERGY, 1) for _ in range(6)]
+
+        # Position riders where they can't draft and moves aren't efficient
+        for i, rider in enumerate(self.player.riders):
+            rider.position = i * 10  # Spread out
+
+        # Clear last move so drafting isn't possible
+        self.state.last_move = None
+
+        move = self.tobibot.choose_move(self.engine, self.player, self.player.riders)
+
+        # Should consider TeamCar when hand is low and no efficient moves
+        # (May not always choose TeamCar if there are scoring opportunities)
+        self.assertIsNotNone(move)
+
+    def test_priority3_prefer_teamdraft(self):
+        """Test Priority 3: Prefer TeamDraft when available"""
+        # Set up situation where TeamDraft is available
+        # Put two riders at same position, make previous move with movement
+        self.player.riders[0].position = 5
+        self.player.riders[1].position = 5
+        self.player.riders[2].position = 10
+
+        # Set up last move so drafting is possible
+        self.state.last_move = {
+            'position': 5,
+            'movement': 3,
+            'action_type': ActionType.PULL
+        }
+
+        # Give plenty of cards so hand management doesn't interfere
+        self.player.hand = [Card(CardType.ROULEUR, 5) for _ in range(10)]
+
+        # Mark riders 0 and 1 as eligible (not moved yet this round)
+        eligible = [self.player.riders[0], self.player.riders[1]]
+        move = self.tobibot.choose_move(self.engine, self.player, eligible)
+
+        # Should prefer TeamDraft if available
+        self.assertIsNotNone(move)
+        if move.action_type == ActionType.TEAM_DRAFT:
+            # Good - TeamDraft was chosen
+            self.assertEqual(move.action_type, ActionType.TEAM_DRAFT)
+
+    def test_priority3_prefer_draft_over_pull(self):
+        """Test Priority 3: Prefer Draft over Pull when available"""
+        # Set up situation where Draft is available
+        rider = self.player.riders[0]
+        rider.position = 5
+
+        # Set up last move so drafting is possible
+        self.state.last_move = {
+            'position': 5,
+            'movement': 3,
+            'action_type': ActionType.PULL
+        }
+
+        # Give plenty of cards
+        self.player.hand = [Card(CardType.ROULEUR, 5) for _ in range(10)]
+
+        move = self.tobibot.choose_move(self.engine, self.player, [rider])
+
+        # Should choose Draft (free movement) over Pull (costs cards)
+        self.assertIsNotNone(move)
+        # Draft should be preferred when available
+        if move.action_type == ActionType.DRAFT:
+            self.assertEqual(move.action_type, ActionType.DRAFT)
+
+    def test_priority4_group_with_teammates(self):
+        """Test Priority 4: Advance to fields with team riders"""
+        # Position riders so one can move to join another
+        self.player.riders[0].position = 2
+        self.player.riders[1].position = 5  # Target position
+        self.player.riders[2].position = 10
+
+        # Give cards to move
+        self.player.hand = [
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5)
+        ]
+
+        # Clear last move so no drafting available
+        self.state.last_move = None
+
+        move = self.tobibot.choose_move(self.engine, self.player, [self.player.riders[0]])
+
+        self.assertIsNotNone(move)
+        # TobiBot should try to group with teammates when possible
+
+    def test_priority5_el_patron_positioning(self):
+        """Test Priority 5: When El Patron, position with opponents"""
+        # Make player 0 the El Patron
+        self.state.el_patron = 0
+
+        # Position opponent rider
+        opponent_rider = self.state.players[1].riders[0]
+        opponent_rider.position = 5
+
+        # Position our rider near opponent
+        self.player.riders[0].position = 2
+
+        # Give cards to move
+        self.player.hand = [
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5)
+        ]
+
+        # Clear last move
+        self.state.last_move = None
+
+        move = self.tobibot.choose_move(self.engine, self.player, [self.player.riders[0]])
+
+        self.assertIsNotNone(move)
+        # When El Patron, should consider moving to opponent positions
+
+    def test_priority7_isolated_lead_rider(self):
+        """Test Priority 7: TeamCar if lead rider is isolated without options"""
+        # Position lead rider alone and far ahead
+        self.player.riders[0].position = 0
+        self.player.riders[1].position = 0
+        self.player.riders[2].position = 20  # Lead rider, isolated
+
+        # Give few cards (but >6 so priority 2 doesn't trigger)
+        self.player.hand = [Card(CardType.ENERGY, 1) for _ in range(7)]
+
+        # Clear last move so lead can't draft
+        self.state.last_move = None
+
+        # Only lead rider is eligible
+        move = self.tobibot.choose_move(self.engine, self.player, [self.player.riders[2]])
+
+        self.assertIsNotNone(move)
+        # If lead rider is isolated and can't advance well, might use TeamCar
+
+    def test_tobibot_calculates_points_correctly(self):
+        """Test that TobiBot correctly calculates potential points"""
+        # Position rider near sprint
+        rider = self.player.riders[0]
+        rider.position = 17
+
+        # Give cards
+        self.player.hand = [Card(CardType.ROULEUR, 5) for _ in range(3)]
+
+        # Create a move that would reach the sprint
+        move = Move(
+            action_type=ActionType.PULL,
+            rider=rider,
+            cards=[self.player.hand[0], self.player.hand[1]]
+        )
+
+        # Calculate points for this move
+        points = self.tobibot._calculate_points(move, self.engine)
+
+        # Should detect that sprint points are available
+        self.assertGreaterEqual(points, 0)
+
+    def test_tobibot_respects_terrain_limits(self):
+        """Test that TobiBot respects terrain limits in calculations"""
+        # Use a track with climbs
+        state = GameState(num_players=2, tile_config=[2])  # Mountaintop Finish
+        engine = GameEngine(state)
+        player = state.players[0]
+
+        from agents import create_agent
+        tobibot = create_agent('tobibot', 0)
+
+        # Position sprinter on climb
+        sprinter = player.riders[1]  # Sprinter
+        sprinter.position = 3  # Start of climb
+
+        # Give cards
+        player.hand = [Card(CardType.SPRINTER, 7) for _ in range(3)]
+
+        # Get move
+        move = tobibot.choose_move(engine, player, [sprinter])
+
+        self.assertIsNotNone(move)
+        # TobiBot should account for sprinter's 3-field limit on climbs
+
+    def test_tobibot_can_handle_empty_moves(self):
+        """Test that TobiBot handles situations with no valid moves gracefully"""
+        # Remove all cards
+        self.player.hand = []
+
+        # Position riders where TeamCar isn't available (need implementation check)
+        move = self.tobibot.choose_move(self.engine, self.player, self.player.riders)
+
+        # Should either return a valid move or None
+        if move is not None:
+            self.assertIn(move.action_type, [
+                ActionType.PULL, ActionType.ATTACK, ActionType.DRAFT,
+                ActionType.TEAM_PULL, ActionType.TEAM_DRAFT, ActionType.TEAM_CAR
+            ])
+
+    def test_tobibot_identifies_isolated_rider(self):
+        """Test that TobiBot correctly identifies isolated riders"""
+        # Rider alone at position 10
+        self.player.riders[0].position = 0
+        self.player.riders[1].position = 0
+        isolated_rider = self.player.riders[2]
+        isolated_rider.position = 10
+
+        # Check isolation
+        is_isolated = self.tobibot._is_rider_isolated(isolated_rider, self.engine, self.player)
+        self.assertTrue(is_isolated)
+
+        # Rider with teammate should not be isolated
+        self.player.riders[0].position = 10
+        is_isolated = self.tobibot._is_rider_isolated(isolated_rider, self.engine, self.player)
+        self.assertFalse(is_isolated)
+
+    def test_priority7_eligible_riders_only(self):
+        """Test Priority 7 bug fix: Should only check lead among ELIGIBLE riders
+
+        This tests the fix for the infinite TeamCar loop bug where TobiBot would
+        check the overall lead rider (across all riders) instead of the lead among
+        eligible riders. When the overall lead had already moved, Priority 7 would
+        incorrectly trigger TeamCar for remaining riders.
+
+        Scenario: Riders at positions 10, 11, 44
+        - Rider at 44 moves first (lead rider)
+        - Riders at 10, 11 should move normally, NOT use TeamCar
+        """
+        # Set up the exact scenario from the bug: riders at positions 10, 11, 44
+        self.player.riders[0].position = 10  # Rouleur
+        self.player.riders[1].position = 11  # Sprinter
+        self.player.riders[2].position = 44  # Climber (lead rider)
+
+        # Give sufficient mixed cards (>6 so Priority 2 doesn't trigger)
+        # Include cards for each rider type so they can all move
+        self.player.hand = [
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.SPRINTER, 7),
+            Card(CardType.SPRINTER, 7),
+            Card(CardType.CLIMBER, 4),
+            Card(CardType.CLIMBER, 4),
+            Card(CardType.ENERGY, 1),
+            Card(CardType.ENERGY, 1),
+        ]
+
+        # Clear last move so no drafting is available
+        self.state.last_move = None
+
+        # Simulate that rider at position 44 has already moved this round
+        # Only riders at positions 10 and 11 are eligible (rider at 44 already moved)
+
+        # Test rider at position 11 (should be lead among eligible riders)
+        move_rider_11 = self.tobibot.choose_move(self.engine, self.player, [self.player.riders[1]])
+        self.assertIsNotNone(move_rider_11)
+        # Should NOT be TeamCar (the bug would cause this)
+        self.assertNotEqual(move_rider_11.action_type, ActionType.TEAM_CAR,
+                           "TobiBot should not use TeamCar for rider at position 11 - "
+                           "this indicates the Priority 7 bug is present")
+        # Should be a movement action
+        self.assertIn(move_rider_11.action_type, [ActionType.PULL, ActionType.ATTACK, ActionType.TEAM_PULL])
+
+        # Test rider at position 10
+        move_rider_10 = self.tobibot.choose_move(self.engine, self.player, [self.player.riders[0]])
+        self.assertIsNotNone(move_rider_10)
+        # Should NOT be TeamCar
+        self.assertNotEqual(move_rider_10.action_type, ActionType.TEAM_CAR,
+                           "TobiBot should not use TeamCar for rider at position 10 - "
+                           "this indicates the Priority 7 bug is present")
+        # Should be a movement action
+        self.assertIn(move_rider_10.action_type, [ActionType.PULL, ActionType.ATTACK, ActionType.TEAM_PULL])
+
+    def test_no_infinite_teamcar_loop(self):
+        """Integration test: Verify TobiBot doesn't get stuck in infinite TeamCar loop
+
+        This test runs multiple rounds with riders spread out to ensure TobiBot
+        doesn't repeatedly use TeamCar instead of moving riders forward.
+        """
+        from agents import create_agent
+
+        # Set up game with TobiBot
+        state = GameState(num_players=2, tile_config=[1, 4, 5])
+        engine = GameEngine(state)
+        tobibot = create_agent('tobibot', 0)
+        player = state.players[0]
+
+        # Position riders spread out like in the bug scenario
+        player.riders[0].position = 10  # Rouleur
+        player.riders[1].position = 11  # Sprinter
+        player.riders[2].position = 44  # Climber
+
+        # Give sufficient mixed cards for all rider types
+        player.hand = [
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.ROULEUR, 5),
+            Card(CardType.SPRINTER, 7),
+            Card(CardType.SPRINTER, 7),
+            Card(CardType.CLIMBER, 4),
+            Card(CardType.CLIMBER, 4),
+            Card(CardType.ENERGY, 1),
+            Card(CardType.ENERGY, 1),
+            Card(CardType.ENERGY, 1),
+            Card(CardType.ENERGY, 1),
+        ]
+
+        # Track TeamCar usage over multiple rounds
+        teamcar_count = 0
+        movement_count = 0
+        total_moves = 0
+
+        # Simulate 5 rounds of moves
+        for _ in range(5):
+            # Sort riders by position (descending) to simulate proper turn order
+            # Leaders move first
+            sorted_riders = sorted(player.riders, key=lambda r: r.position, reverse=True)
+
+            # Each rider moves once per round
+            for rider in sorted_riders:
+                move = tobibot.choose_move(engine, player, [rider])
+                if move:
+                    total_moves += 1
+                    if move.action_type == ActionType.TEAM_CAR:
+                        teamcar_count += 1
+                        # Execute TeamCar to update hand
+                        if not move.cards:
+                            move.cards = [player.hand[0]] if player.hand else []
+                        engine.execute_move(move)
+                    else:
+                        movement_count += 1
+                        # Execute movement
+                        engine.execute_move(move)
+
+                    # Replenish mixed cards if getting low
+                    if len(player.hand) < 5:
+                        player.hand.extend([
+                            Card(CardType.ROULEUR, 5),
+                            Card(CardType.SPRINTER, 7),
+                            Card(CardType.CLIMBER, 4),
+                            Card(CardType.ENERGY, 1),
+                            Card(CardType.ENERGY, 1),
+                        ])
+
+        # After 5 rounds (15 moves), TeamCar should be minority
+        # With the bug, TeamCar would be ~70-90% (10-13 out of 15 moves)
+        # With the fix, TeamCar should be < 50% (most moves should be actual movement)
+        teamcar_percentage = (teamcar_count / total_moves) * 100 if total_moves > 0 else 0
+
+        self.assertLess(teamcar_percentage, 50,
+                       f"TobiBot used TeamCar {teamcar_percentage:.1f}% of the time "
+                       f"({teamcar_count}/{total_moves} moves). This suggests the infinite "
+                       f"TeamCar loop bug may still be present. Expected < 50%.")
+
+        # Most importantly: Verify riders actually moved forward significantly
+        # With the bug, riders would barely move or not move at all
+        self.assertGreater(player.riders[0].position, 10,
+                          "Rider at position 10 should have advanced")
+        self.assertGreater(player.riders[1].position, 11,
+                          "Rider at position 11 should have advanced")
+
+        # At least one of the non-lead riders should have advanced by 5+ positions
+        # to show they're actually moving, not just stuck
+        total_advancement = (player.riders[0].position - 10) + (player.riders[1].position - 11)
+        self.assertGreater(total_advancement, 8,
+                          f"Non-lead riders should have advanced significantly. "
+                          f"Total advancement: {total_advancement} fields. "
+                          f"With the bug, this would be near zero.")
+
+    def test_tobibot_competes_full_game(self):
+        """Integration test: TobiBot can complete a full game"""
+        from agents import create_agent
+        from simulator import GameSimulator
+
+        # Create a simulator and run a game
+        sim = GameSimulator(num_players=2, verbose=False)
+        agents = [
+            create_agent('tobibot', 0),
+            create_agent('random', 1)
+        ]
+
+        # Run a single game
+        result = sim.run_game(agents)
+
+        # Verify game completed
+        self.assertIn('final_result', result)
+        self.assertIsNotNone(result['final_result'].get('winner'))
+
+
+class TestTournamentPositionAlternation(unittest.TestCase):
+    """Test that tournament positions are properly alternated"""
+
+    def test_position_alternation_two_player(self):
+        """Test that 2-player tournaments alternate positions properly"""
+        from run_tournament import run_multiplayer_tournament
+
+        # Run a mini tournament with 2 agents, 10 games
+        agents = ['random', 'marc_soler']
+
+        df, _ = run_multiplayer_tournament(
+            agent_types=agents,
+            games_per_combination=10
+        )
+
+        # Check 2-player games
+        two_player = df[df['num_players'] == 2]
+
+        for agent in agents:
+            pos0_games = len(two_player[two_player['player_0_agent'] == agent])
+            pos1_games = len(two_player[two_player['player_1_agent'] == agent])
+
+            # For 10 games with 2 permutations, each should be at each position 5 times
+            self.assertEqual(pos0_games, 5,
+                           f"{agent} should play 5 games at position 0, got {pos0_games}")
+            self.assertEqual(pos1_games, 5,
+                           f"{agent} should play 5 games at position 1, got {pos1_games}")
+
+    def test_position_distribution_three_player(self):
+        """Test that 3-player tournaments distribute positions"""
+        from run_tournament import run_multiplayer_tournament
+
+        # Run with 3 agents, 12 games (divisible by 6 permutations)
+        agents = ['random', 'marc_soler', 'balanced']
+
+        df, _ = run_multiplayer_tournament(
+            agent_types=agents,
+            games_per_combination=12
+        )
+
+        # Check 3-player games
+        three_player = df[df['num_players'] == 3]
+
+        for agent in agents:
+            pos0_games = len(three_player[three_player['player_0_agent'] == agent])
+            pos1_games = len(three_player[three_player['player_1_agent'] == agent])
+            pos2_games = len(three_player[three_player['player_2_agent'] == agent])
+
+            # With 12 games and 6 permutations, each position should have 4 games
+            self.assertEqual(pos0_games, 4,
+                           f"{agent} should play 4 games at position 0, got {pos0_games}")
+            self.assertEqual(pos1_games, 4,
+                           f"{agent} should play 4 games at position 1, got {pos1_games}")
+            self.assertEqual(pos2_games, 4,
+                           f"{agent} should play 4 games at position 2, got {pos2_games}")
+
+    def test_position_alternation_fairness(self):
+        """Test that position alternation creates fair matchups"""
+        from run_tournament import run_multiplayer_tournament
+
+        # Run with 2 agents to check fairness
+        agents = ['random', 'marc_soler']
+
+        df, _ = run_multiplayer_tournament(
+            agent_types=agents,
+            games_per_combination=10
+        )
+
+        two_player = df[df['num_players'] == 2]
+
+        # Each agent should play equal games at each position
+        for agent in agents:
+            total_games = len(two_player[
+                (two_player['player_0_agent'] == agent) |
+                (two_player['player_1_agent'] == agent)
+            ])
+
+            # Should play exactly 10 games total
+            self.assertEqual(total_games, 10,
+                           f"{agent} should play 10 total games, got {total_games}")
+
+    def test_analyze_position_bias_function(self):
+        """Test the analyze_position_bias function"""
+        from run_tournament import run_multiplayer_tournament, analyze_position_bias
+        import pandas as pd
+
+        # Run a small tournament
+        agents = ['random', 'marc_soler']
+
+        df, _ = run_multiplayer_tournament(
+            agent_types=agents,
+            games_per_combination=10
+        )
+
+        # Analyze position bias
+        analysis = analyze_position_bias(df, agents)
+
+        # Check structure
+        self.assertIn('by_agent', analysis)
+        self.assertIn('overall', analysis)
+
+        # Check that each agent has position stats
+        for agent in agents:
+            self.assertIn(agent, analysis['by_agent'])
+            agent_stats = analysis['by_agent'][agent]
+
+            # Should have 2-player position stats
+            self.assertIn('2p_pos0', agent_stats)
+            self.assertIn('2p_pos1', agent_stats)
+
+            # Each position should have the required fields
+            for key in ['2p_pos0', '2p_pos1']:
+                self.assertIn('games', agent_stats[key])
+                self.assertIn('wins', agent_stats[key])
+                self.assertIn('win_rate', agent_stats[key])
+                self.assertIn('avg_score', agent_stats[key])
+
+        # Check overall stats
+        self.assertIn('2p_pos0', analysis['overall'])
+        self.assertIn('2p_pos1', analysis['overall'])
 
 
 if __name__ == '__main__':

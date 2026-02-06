@@ -21,13 +21,16 @@ pip install -r requirements.txt
 # Quick balance test (10-50 games, shows win rates)
 python quick_test.py
 
+# Run comprehensive multi-player tournament (2/3/4 players, 250 games)
+python run_tournament.py
+
 # Generate analysis report from existing game logs
 python generate_report.py
 
 # Usage examples and tutorials
 python example_usage.py
 
-# Play interactively against bots
+# Play interactively against bots (press 'r' during play to view card reference)
 python play.py
 
 # Run comprehensive unit tests for all game rules
@@ -40,16 +43,46 @@ python test_game_rules.py
 |---|---|
 | `game_state.py` | Core data structures: cards, riders, players, board, El Patron rule |
 | `game_engine.py` | Game rules, move validation, terrain limits |
-| `agents.py` | AI agent implementations (14 strategies) |
+| `agents.py` | AI agent implementations (15 strategies) |
 | `simulator.py` | Game execution, logging, batch runs, tournaments |
 | `analysis.py` | Statistical analysis and report generation |
 | `quick_test.py` | Fast balance testing script |
+| `run_tournament.py` | Multi-player tournament runner (2/3/4 players, all combinations) |
 | `generate_report.py` | Standalone report generator |
 | `example_usage.py` | Usage examples |
 | `play.py` | Interactive play against bots (terminal UI) |
-| `test_game_rules.py` | Comprehensive unit tests for all game rules and mechanics |
+| `test_game_rules.py` | Comprehensive unit tests: game rules, mechanics, agents, tournament features |
 
 Output goes to `game_logs/` (gitignored).
+
+## Tournament Mode
+
+The `run_tournament.py` script runs comprehensive multi-player tournaments:
+
+```bash
+python run_tournament.py
+```
+
+**What it does:**
+- Tests all agent combinations across 2, 3, and 4 players
+- 10 games per combination (250 total games)
+- **Alternates player positions** to minimize position bias
+- Generates detailed statistics and head-to-head comparisons
+- Saves results to `game_logs/tournament_results_TIMESTAMP.csv`
+
+**Position Alternation:**
+Games are distributed across all permutations of each combination to ensure agents experience different starting positions equally. For example, in 2-player games with 10 games per combination, each agent plays 5 games as Player 0 and 5 games as Player 1.
+
+**Statistics provided:**
+- Overall win rates by agent
+- Average scores and total scores
+- Head-to-head matrix for 2-player matchups
+- **Position bias analysis** (wins by player position)
+- Results breakdown by player count
+- Game length and end reason distribution
+
+**Customization:**
+Edit the script to change agents, games per combination, or player counts.
 
 ## Key Concepts
 
@@ -95,13 +128,14 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 
 ### Game End Conditions
 - 5 riders finish
-- One player has all 3 riders at finish (NEW)
+- One player has all 3 riders at finish
+- Player stuck (any player has 0 total advancement over 5 consecutive rounds)
 - Round limit (150) hit
 - All cards run out
 
 ## Available Agents
 
-14 agent types: `random`, `greedy`, `lead_rider`, `balanced`, `sprint_hunter`, `conservative`, `aggressive`, `adaptive`, `wheelsucker`, `gemini`, `claudebot`, `rouleur_focus`, `sprinter_focus`, `climber_focus`
+15 agent types: `random`, `marc_soler`, `lead_rider`, `balanced`, `sprint_hunter`, `conservative`, `aggressive`, `adaptive`, `wheelsucker`, `gemini`, `chatgpt`, `claudebot`, `tobibot`, `rouleur_focus`, `sprinter_focus`, `climber_focus`
 
 ### Featured Agents
 
@@ -119,6 +153,15 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 - Checkpoint card drawing
 - Hand management (TeamCar when needed)
 
+**TobiBot** - Prioritized decision-making:
+- Score sprint/finish points when possible
+- Hand management (TeamCar when ≤6 cards and no efficient moves)
+- Prefer efficient moves (TeamDraft > Draft > TeamPull)
+- Group with team riders
+- When El Patron, position with opponents
+- Maximize team advancement respecting terrain limits
+- TeamCar if any isolated rider lacks good options
+
 ## Code Conventions
 
 - Dataclasses for all game entities (`Card`, `Rider`, `Player`, `Move`, etc.)
@@ -127,7 +170,7 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 - Abstract base class pattern for agents (`Agent` ABC -> concrete agents)
 - `eligible_riders` parameter in `choose_move()` for round-based turns
 - JSON for game logs, CSV for tournament results
-- Comprehensive unit tests in `test_game_rules.py` (60+ tests covering all mechanics)
+- Comprehensive unit tests in `test_game_rules.py` (80+ tests covering all mechanics, agents, and tournament features)
 
 ## Key Functions
 

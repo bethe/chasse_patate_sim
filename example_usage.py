@@ -20,7 +20,7 @@ def example_single_game():
     # Run one game with a greedy agent vs balanced agent
     from agents import create_agent
     agents = [
-        create_agent('greedy', 0),
+        create_agent('marc_soler', 0),
         create_agent('balanced', 1)
     ]
     
@@ -38,7 +38,7 @@ def example_batch_simulation():
     
     # Run 50 games with 3 different agents
     results = simulator.run_batch_simulation(
-        agent_types=['greedy', 'balanced', 'aggressive'],
+        agent_types=['marc_soler', 'balanced', 'aggressive'],
         num_games=50
     )
     
@@ -70,7 +70,7 @@ def example_tournament():
     # Test these agent types against each other
     agent_types = [
         'random',
-        'greedy', 
+        'marc_soler', 
         'lead_rider',
         'balanced',
         'sprint_hunter'
@@ -120,7 +120,7 @@ def example_full_analysis():
     
     print("\nRunning 100 games for analysis...")
     results = simulator.run_batch_simulation(
-        agent_types=['greedy', 'adaptive'],
+        agent_types=['marc_soler', 'adaptive'],
         num_games=100
     )
     
@@ -185,12 +185,46 @@ def example_test_specific_matchup():
         print(f"  {reason}: {count} games ({count/len(results)*100:.1f}%)")
 
 
+def example_test_tobibot():
+    """Test TobiBot against other featured agents"""
+    print("\n" + "="*80)
+    print("EXAMPLE 6: Testing TobiBot")
+    print("="*80)
+
+    simulator = GameSimulator(num_players=2, verbose=False)
+
+    # Test TobiBot against ClaudeBot and Gemini
+    matchups = [
+        ('tobibot', 'claudebot'),
+        ('tobibot', 'gemini'),
+        ('tobibot', 'chatgpt')
+    ]
+
+    for agent1, agent2 in matchups:
+        print(f"\nTesting: {agent1.upper()} vs {agent2.upper()} (50 games)")
+        results = simulator.run_batch_simulation(
+            agent_types=[agent1, agent2],
+            num_games=50
+        )
+
+        # Quick stats
+        agent1_wins = sum(1 for r in results if r['winner_id'] == 0)
+        agent2_wins = sum(1 for r in results if r['winner_id'] == 1)
+        avg_agent1_score = sum(r['scores'][0] for r in results) / len(results)
+        avg_agent2_score = sum(r['scores'][1] for r in results) / len(results)
+
+        print(f"  {agent1}: {agent1_wins} wins ({agent1_wins/len(results)*100:.1f}%), "
+              f"avg score: {avg_agent1_score:.1f}")
+        print(f"  {agent2}: {agent2_wins} wins ({agent2_wins/len(results)*100:.1f}%), "
+              f"avg score: {avg_agent2_score:.1f}")
+
+
 def show_available_agents():
     """Display all available agent types"""
     print("\n" + "="*80)
     print("AVAILABLE AGENT TYPES")
     print("="*80)
-    
+
     agents = get_available_agents()
     for agent in agents:
         print(f"  - {agent}")
@@ -208,15 +242,16 @@ def main():
     show_available_agents()
     
     # Run examples (comment out ones you don't want)
-    
+
     # Quick examples
     # example_single_game()
     # example_batch_simulation()
-    
+
     # More comprehensive examples
     example_tournament()
     # example_full_analysis()
     # example_test_specific_matchup()
+    # example_test_tobibot()
     
     print("\n" + "="*80)
     print("All examples complete!")

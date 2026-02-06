@@ -294,7 +294,11 @@ class GameState:
         # Track last move for drafting eligibility
         # Stores the most recent move result from execute_move()
         self.last_move: Optional[Dict] = None
-    
+
+        # Track player positions at end of each round for stuck detection
+        # Format: List of dicts, one per round: {player_id: total_position_of_3_riders}
+        self.round_positions_history: List[Dict[int, int]] = []
+
     def _deal_initial_hands(self):
         """Deal initial hands according to game rules:
         - 3 Energy cards
@@ -431,6 +435,14 @@ class GameState:
     
     def start_new_round(self):
         """Begin a new round, clearing moved-riders tracking."""
+        # Record positions at the end of the previous round (before incrementing)
+        if self.current_round > 0:
+            round_positions = {}
+            for player in self.players:
+                total_position = sum(rider.position for rider in player.riders)
+                round_positions[player.player_id] = total_position
+            self.round_positions_history.append(round_positions)
+
         self.riders_moved_this_round.clear()
         self.players_acted_at_position.clear()
         self.current_round += 1
@@ -528,10 +540,11 @@ class GameState:
         return (next_player, eligible_riders)
     
     def check_game_over(self) -> bool:
-        """Check if game is over based on three conditions:
+        """Check if game is over based on four conditions:
         1. Five riders have reached the finish line
         2. One player has all 3 riders at the finish
         3. All players have run out of cards (and deck is empty)
+        4. Any player is stuck (0 total advancement over last 5 consecutive rounds)
         """
         try:
             finish_position = int(self.track_length - 1)
@@ -562,8 +575,27 @@ class GameState:
                     self.game_over = True
                     return True
 
+            # Condition 4: Check if any player is stuck (0 advancement over 5 consecutive rounds)
+            if len(self.round_positions_history) >= 5:
+                # Check each player's advancement over last 5 rounds
+                for player in self.players:
+                    player_id = player.player_id
+                    # Get positions from 5 rounds ago and current positions
+                    positions_5_rounds_ago = self.round_positions_history[-5][player_id]
+
+                    # Get current total positions
+                    current_total_position = sum(rider.position for rider in player.riders)
+
+                    # Calculate advancement
+                    advancement = current_total_position - positions_5_rounds_ago
+
+                    # If any player has 0 advancement over 5 rounds, game is stuck
+                    if advancement == 0:
+                        self.game_over = True
+                        return True
+
             return False
-            
+
         except Exception as e:
             # If there's any error, log it but don't crash
             print(f"Warning: Error in check_game_over: {e}")
@@ -573,13 +605,13 @@ class GameState:
         """Get the reason why the game ended"""
         if not self.game_over:
             return None
-        
+
         # Check which condition triggered game over
         finish_position = self.track_length - 1
-        riders_finished = sum(1 for player in self.players 
-                             for rider in player.riders 
+        riders_finished = sum(1 for player in self.players
+                             for rider in player.riders
                              if rider.position >= finish_position)
-        
+
         # Check if one player has all 3 riders finished
         for player in self.players:
             player_finished = sum(1 for r in player.riders if r.position >= finish_position)
@@ -591,6 +623,17 @@ class GameState:
 
         if len(self.deck) == 0 and all(len(p.hand) == 0 for p in self.players):
             return "players_out_of_cards"
+
+        # Check if a player is stuck (0 advancement over 5 consecutive rounds)
+        if len(self.round_positions_history) >= 5:
+            for player in self.players:
+                player_id = player.player_id
+                positions_5_rounds_ago = self.round_positions_history[-5][player_id]
+                current_total_position = sum(rider.position for rider in player.riders)
+                advancement = current_total_position - positions_5_rounds_ago
+
+                if advancement == 0:
+                    return f"player_stuck (Player {player_id} had 0 advancement in 5 consecutive rounds)"
 
         return "unknown"
     
