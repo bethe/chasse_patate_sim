@@ -16,6 +16,16 @@ def calculate_move_distance(engine: GameEngine, move: Move) -> int:
         return engine._calculate_pull_movement(move.rider, move.cards)
     elif move.action_type == ActionType.ATTACK:
         return engine._calculate_attack_movement(move.rider, move.cards)
+    elif move.action_type == ActionType.TEAM_PULL:
+        return engine._calculate_pull_movement(move.rider, move.cards)
+    elif move.action_type == ActionType.DRAFT:
+        if engine.state.last_move:
+            return engine.state.last_move.get('movement', 0)
+        return 0
+    elif move.action_type == ActionType.TEAM_DRAFT:
+        if engine.state.last_move:
+            return engine.state.last_move.get('movement', 0)
+        return 0
     return 0
 
 
