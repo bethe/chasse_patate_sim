@@ -1,143 +1,198 @@
-# Chasse Patate - Game Balance Simulator
+# Chasse Patate - Cycling Board Game Simulator
 
 A simulation framework for testing and balancing the Chasse Patate cycling board game through AI agent play. Also supports interactive human-vs-bot play.
 
 ## Overview
 
-- Run thousands of AI-vs-AI games to detect dominant strategies
-- Play interactively against bots in the terminal
-- Track detailed statistics: moves, scores, card usage, sprint points
-- Generate analysis reports with balance assessments
-
-## Quick Start
-
-```bash
-pip install -r requirements.txt
-
-# Play against bots
-python play.py
-
-# Fast balance test (50 games, win rates, balance assessment)
-python quick_test.py
-
-# Generate analysis report from game logs
-python generate_report.py
-
-# Usage examples and tutorials
-python example_usage.py
-```
+This simulator allows you to:
+- Run thousands of simulated games with different AI strategies
+- Track detailed statistics: moves, scores, card usage, positions
+- Identify dominant strategies and balance issues
+- Compare different agent behaviors head-to-head
+- Generate comprehensive analysis reports
+- Play interactively against AI bots
 
 ## Project Structure
 
 ```
 .
-├── game_state.py        # Core data structures: cards, riders, players, board
-├── game_engine.py       # Game rules, move validation, turn logic
-├── agents.py            # AI agent implementations (12 strategies)
-├── simulator.py         # Game execution, logging, batch runs, tournaments
-├── analysis.py          # Statistical analysis and report generation
-├── play.py              # Interactive play against bots (terminal UI)
-├── quick_test.py        # Fast balance testing script
-├── generate_report.py   # Standalone report generator
-├── example_usage.py     # Usage examples
-├── requirements.txt     # Python dependencies (pandas, numpy, matplotlib)
-└── game_logs/           # Generated game logs (gitignored)
+├── game_state.py          # Core game state, cards, El Patron rule
+├── game_engine.py         # Game rules, move validation, terrain limits
+├── agents.py              # AI agent implementations (14 types)
+├── simulator.py           # Game simulation and logging
+├── analysis.py            # Statistical analysis tools
+├── play.py                # Interactive play mode
+├── quick_test.py          # Fast balance testing script
+├── example_usage.py       # Example scripts and tutorials
+├── generate_report.py     # Standalone report generation
+├── test_terrain_limits.py # Unit tests for terrain limits
+└── game_logs/             # Generated game logs (created automatically)
 ```
 
-## Game Rules
+## Quick Start
 
-### Riders and Cards
+### Installation
 
-- **3 riders per player**: Rouleur, Sprinter, Climber
-- **4 card types**: Energy (always 1 movement), Rouleur, Sprinter, Climber
-- Cards can only be played on matching rider types (Energy works on any rider)
-- Movement values depend on the current terrain and action mode (Pull vs Attack)
+```bash
+pip install -r requirements.txt
+```
 
-### Actions
-
-| Action | Cards | Description |
-|---|---|---|
-| **Pull** | 1-3 | Advance a single rider |
-| **Attack** | 3 | Burst advance (higher values on some terrains) |
-| **Draft** | 0 | Copy the previous player's movement for free |
-| **TeamPull** | 1-3 | One rider pulls, teammates at same position draft along |
-| **TeamDraft** | 0 | Multiple riders draft together off another player's move |
-| **TeamCar** | 0 | Draw 2 cards, discard 1 (rider does not move) |
-
-### Rounds and Turns
-
-The game is played in **rounds**. One round completes when every rider has been part of a move.
-
-- **Turn order**: the rider most advanced on the track moves first
-- **Tied positions**: players alternate turns by player index; after one move, the turn passes to the next player before the same player can move again at that position
-- **Team actions**: all riders involved (lead + drafters) count as having moved
-
-### Scoring
-
-- **Intermediate sprints** (last field of each tile): top 3 riders earn 3/2/1 points (6 total)
-- **Finish line** (last field of final tile): top 5 riders earn 12/8/5/3/1 points (29 total)
-- Points are awarded per rider as they cross or land on sprint/finish fields
-- Multiple riders from the same player can score in the same turn
-
-### Checkpoints
-
-Every 10 fields (10, 20, 30, ...), each rider crossing draws 3 cards. In team moves, every rider that crosses a checkpoint draws independently.
-
-### Game End
-
-1. **5 riders finished** - crossed the finish line
-2. **Round limit** - 150 rounds completed
-3. **Out of cards** - deck empty and all hands empty
-
-## Interactive Play
+### Interactive Play
 
 ```bash
 python play.py
 ```
+
+Play against AI bots interactively. Choose number of players (2-5) and assign human or bot to each slot.
+
+### Run a Quick Balance Test
+
+```bash
+python quick_test.py
+```
+
+Runs 50 games and shows win rates, score distribution, action usage, and game over reasons.
+
+## Game Rules
+
+### Riders
+Each player has 3 riders:
+- **Rouleur** - Balanced all-terrain rider
+- **Sprinter** - Fast on flat, weak on climbs
+- **Climber** - Excels on climbs, limited on cobbles
+
+### Terrain Types
+- **Flat** - Standard terrain
+- **Climb** - Mountains (Sprinters/Rouleurs limited)
+- **Cobbles** - Rough terrain (Climbers limited)
+- **Descent** - Downhill (all riders fast)
+- **Sprint** - Intermediate sprint points
+- **Finish** - Final sprint points
+
+### Terrain Limits (NEW)
+Riders have maximum fields per round on certain terrain:
+| Rider    | Terrain  | Max Fields |
+|----------|----------|------------|
+| Sprinter | Climb    | 3          |
+| Rouleur  | Climb    | 4          |
+| Climber  | Cobbles  | 3          |
+
+**Important**: Limits apply only to the portion of movement on limited terrain. In team moves, each rider applies their own limits individually.
+
+### El Patron Rule
+- El Patron rotates each round (Player 0 -> 1 -> 2 -> ...)
+- Determines turn order when riders are tied at the same position
+- El Patron player goes first among tied players
+
+### Turn Order
+1. Riders move in order of position (leaders first)
+2. When tied, El Patron order determines who moves first
+3. All riders must move once before a new round begins
+
+### Actions
+
+| Action     | Cards | Description                                    |
+|------------|-------|------------------------------------------------|
+| Pull       | 1-3   | Advance a single rider                         |
+| Attack     | 3     | Aggressive advance (requires 1+ rider card)    |
+| Draft      | 0     | Follow previous move (free movement)           |
+| TeamPull   | 1-3   | One rider pulls, teammates draft               |
+| TeamDraft  | 0     | Multiple riders draft together                 |
+| TeamCar    | 0     | Draw 2 cards, discard 1                        |
+
+### Drafting Rules
+- Can draft after Pull, Draft, TeamPull, or TeamDraft
+- Must be at the same position the previous move started from
+- Same player's different riders CAN draft each other
+- A rider cannot draft from its own previous move
+
+### Scoring
+- **Intermediate Sprints** (end of each tile): 3/2/1 points for 1st/2nd/3rd
+- **Finish Line**: 12/8/5/3/1 points for top 5 finishers
+- Points awarded by arrival order
 
 1. Choose number of players (2-5)
 2. Assign each slot as "human" or a bot type
 3. On your turn: pick a rider, then an action, then cards
 4. Press `b` to go back to the previous decision at any step
 
-## AI Agents
+### Game End Conditions
+1. **5 riders finished** - 5+ riders crossed finish line
+2. **Team finished** - One player has all 3 riders at finish
+3. **Out of cards** - Deck empty and all hands empty
 
-12 bot strategies available via `create_agent(type, player_id)`:
+## Available AI Agents
 
-| Agent | Strategy |
-|---|---|
-| `random` | Random moves (baseline) |
-| `greedy` | Maximizes total advancement |
-| `lead_rider` | Focuses on the leading rider |
-| `balanced` | Keeps riders grouped together |
-| `sprint_hunter` | Prioritizes sprint points |
-| `conservative` | Rarely uses TeamCar |
-| `aggressive` | Uses TeamCar frequently |
-| `adaptive` | Adjusts strategy to terrain |
-| `wheelsucker` | Prioritizes drafting |
-| `rouleur_focus` | Prefers Rouleur cards |
-| `sprinter_focus` | Prefers Sprinter cards |
-| `climber_focus` | Prefers Climber cards |
+14 different AI agent types:
+
+| Agent          | Strategy                                      |
+|----------------|-----------------------------------------------|
+| random         | Plays randomly (baseline)                     |
+| greedy         | Maximizes total advancement                   |
+| lead_rider     | Focuses on advancing the leading rider        |
+| balanced       | Keeps all three riders advancing together     |
+| sprint_hunter  | Prioritizes sprint points                     |
+| conservative   | Plays cautiously                              |
+| aggressive     | Maximum advancement per move                  |
+| adaptive       | Adjusts strategy based on terrain             |
+| wheelsucker    | Prioritizes drafting opportunities            |
+| **gemini**     | Balanced scoring: advancement + points + efficiency |
+| **claudebot**  | Multi-factor: terrain awareness, sprint targeting, card economy |
+| rouleur_focus  | Prefers playing Rouleur cards                 |
+| sprinter_focus | Prefers playing Sprinter cards                |
+| climber_focus  | Prefers playing Climber cards                 |
+
+### Featured Agents
+
+**ClaudeBot** - A sophisticated agent considering:
+- Terrain-aware movement (uses terrain limits strategically)
+- Sprint/finish targeting based on arrival order
+- Card economy and hand management
+- Drafting efficiency (free movement is valuable)
+- Rider specialization (right rider for right terrain)
+- Positioning for future drafts
+
+**GeminiBot** - Balanced scoring system weighing:
+- Total advancement (distance x riders)
+- Sprint/finish points potential
+- Card efficiency (penalizes card usage)
+- Checkpoint card drawing
+- Hand management (TeamCar when needed)
 
 ## Simulation API
 
-### Single Game
+### Interactive Play
+
+```bash
+python play.py
+```
+
+### Simulation
 
 ```python
 from simulator import GameSimulator
 from agents import create_agent
 
-sim = GameSimulator(num_players=2, verbose=True)
-agents = [create_agent('greedy', 0), create_agent('wheelsucker', 1)]
-result = sim.run_game(agents, game_id=0)
+# Create simulator
+sim = GameSimulator(verbose=True)
+
+# Create agents
+agents = [
+    create_agent('claudebot', 0),
+    create_agent('gemini', 1)
+]
+
+# Run a game
+result = sim.run_game(agents)
+print(f"Winner: {result['final_result']['winner']}")
 ```
 
 ### Tournament
 
 ```python
-sim = GameSimulator(num_players=2)
+sim = GameSimulator()
 results = sim.run_tournament(
-    agent_types=['greedy', 'balanced', 'wheelsucker', 'sprint_hunter'],
+    agent_types=['claudebot', 'gemini', 'wheelsucker', 'greedy'],
     games_per_matchup=20
 )
 ```
@@ -152,35 +207,25 @@ logs = analyzer.load_game_logs()
 analyzer.generate_report(logs)
 ```
 
-## Game Logs
+## Track Configuration
 
-Games are logged as JSON in `game_logs/`. Each move entry includes both round and turn numbers:
+Default configuration: Tiles 1, 5, 4 (60 fields total)
 
-```json
-{
-  "round": 3,
-  "turn": 12,
-  "player": 1,
-  "move": {
-    "action": "TeamPull",
-    "rider": "P1R0",
-    "old_position": 7,
-    "new_position": 11,
-    "movement": 4,
-    "cards_played": ["Energy", "Energy", "Rouleur"],
-    "drafting_riders": [
-      {"rider": "P1R1", "old_position": 7, "new_position": 11}
-    ],
-    "points_earned": 0,
-    "checkpoints_reached": [10],
-    "cards_drawn": 6
-  }
-}
+Available tiles:
+1. **Flat** - All flat terrain
+2. **Mountaintop Finish** - Flat start, long climb
+3. **Champs Elysees** - Flat + cobbles
+4. **Up and Down** - Climb + descent
+5. **Paris-Roubaix** - Mixed cobbles sections
+
+```python
+from game_state import GameState
+
+# Custom track
+state = GameState(num_players=2, tile_config=[1, 2, 3])
 ```
 
-Final results include `total_rounds` and `total_turns` separately.
-
-## Custom Agents
+## Creating Custom Agents
 
 ```python
 from agents import Agent
@@ -190,26 +235,66 @@ from typing import List, Optional
 
 class MyAgent(Agent):
     def __init__(self, player_id: int):
-        super().__init__(player_id, "MyAgent")
+        super().__init__(player_id, "Custom")
 
     def choose_move(self, engine: GameEngine, player: Player,
                     eligible_riders: List[Rider] = None) -> Optional[Move]:
         valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
-        # Your logic here
-        return valid_moves[0]
+
+        # Your custom logic here
+        return your_chosen_move
+
+# Register in agents.py create_agent() and get_available_agents()
 ```
 
-## Balance Indicators
+## Game Logs
 
-**Healthy game:**
-- Win rates within +-10% of expected
-- Multiple viable strategies
-- Diverse action usage
-- Games end by riders finishing (not round limit)
+All games are logged in detail as JSON files in the `game_logs/` directory:
 
-**Warning signs:**
-- One agent wins >60% of games
-- >90% games hit round limit
-- One action dominates >70% of usage
+- `game_0.json`, `game_1.json`, etc. - Simulated game logs
+- `play_0.json`, `play_1.json`, etc. - Interactive game logs (from `play.py`)
+- `analysis_report.txt` - Comprehensive analysis report
+
+Interactive games (`play.py`) are logged in the same format as simulated games, with an additional `mode: "interactive"` field to distinguish them.
+
+## Analysis Report Contents
+
+Generated reports include:
+- Win rates by agent type
+- Average scores and finishing positions
+- Game length statistics
+- Game over reason distribution
+- Action usage breakdown
+- Card usage statistics
+- Dominant strategy detection
+
+## Performance
+
+- Single game: ~0.1-1 second
+- 50 games: ~5-30 seconds
+- 100 games: ~10-60 seconds
+- Tournament (4 agents, 20 games each): ~2-5 minutes
+
+## Running Tests
+
+```bash
+python test_terrain_limits.py
+```
+
+Runs 13 unit tests for terrain limit functionality.
+
+## Recent Updates
+
+- Added **Terrain Limits** rule (Sprinter/Rouleur/Climber terrain restrictions)
+- Added **El Patron** rule (rotating turn order for tied positions)
+- Added **ClaudeBotAgent** (terrain-aware multi-factor AI)
+- Added **GeminiAgent** (balanced scoring AI)
+- Round-based game loop (all riders move before new round)
+- Same player's riders can draft each other
+- Game ends when one player finishes all 3 riders
+
+## License
+
+This simulator is provided as-is for game development and testing purposes.

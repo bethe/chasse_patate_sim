@@ -29,39 +29,131 @@ python example_usage.py
 
 # Play interactively against bots
 python play.py
+
+# Run terrain limit unit tests
+python test_terrain_limits.py
 ```
 
 ## Project Structure
 
 | File | Purpose |
 |---|---|
-| `game_state.py` | Core data structures: cards, riders, players, board |
-| `game_engine.py` | Game rules, move validation, turn logic |
-| `agents.py` | AI agent implementations (12 strategies) |
+| `game_state.py` | Core data structures: cards, riders, players, board, El Patron rule |
+| `game_engine.py` | Game rules, move validation, terrain limits |
+| `agents.py` | AI agent implementations (14 strategies) |
 | `simulator.py` | Game execution, logging, batch runs, tournaments |
 | `analysis.py` | Statistical analysis and report generation |
 | `quick_test.py` | Fast balance testing script |
 | `generate_report.py` | Standalone report generator |
 | `example_usage.py` | Usage examples |
 | `play.py` | Interactive play against bots (terminal UI) |
+| `test_terrain_limits.py` | Unit tests for terrain limits |
 
 Output goes to `game_logs/` (gitignored).
 
 ## Key Concepts
 
-- **6 actions:** Pull, Attack, Draft, TeamPull, TeamDraft, TeamCar
-- **4 card types:** Energy, Rouleur, Sprinter, Climber
-- **3 riders per player**, each with their own hand/deck
-- **Rounds:** each round, every rider moves once (most advanced first); turns alternate between players at tied positions
-- Game ends when 5 riders finish, round limit (150) hit, or cards run out
-- Agents implement `choose_move()` from abstract `Agent` base class
-- Factory: `create_agent(agent_type, player_id)` creates agents by name
+### Actions
+- **Pull** (1-3 cards): Advance a single rider
+- **Attack** (3 cards): Aggressive advance with bonus
+- **Draft** (0 cards): Follow previous move (free movement)
+- **TeamPull** (1-3 cards): One rider pulls, teammates draft
+- **TeamDraft** (0 cards): Multiple riders draft together
+- **TeamCar** (0 cards): Draw 2, discard 1
+
+### Card Types
+- **Energy** - Wild card, always moves 1
+- **Rouleur** - Balanced movement
+- **Sprinter** - Fast on flat/descent
+- **Climber** - Strong on climbs
+
+### Riders
+- 3 riders per player (Rouleur, Sprinter, Climber)
+- Each rider has terrain-specific strengths
+
+### Terrain Limits (NEW)
+Riders have maximum fields per round on certain terrain:
+| Rider    | Terrain  | Max Fields |
+|----------|----------|------------|
+| Sprinter | Climb    | 3          |
+| Rouleur  | Climb    | 4          |
+| Climber  | Cobbles  | 3          |
+
+Limits apply only to the portion of movement on limited terrain. In team moves, each rider applies their own limits individually.
+
+### El Patron Rule
+- El Patron rotates each round (Player 0 -> 1 -> 2 -> ...)
+- Determines turn order when riders are tied at the same position
+- El Patron player goes first among tied players
+
+### Turn Order (Round-Based)
+1. At round start, El Patron rotates (except round 1)
+2. Riders move in order of position (leaders first)
+3. When tied, El Patron order determines who moves first
+4. Same player's different riders CAN draft each other
+5. All riders must move once before a new round begins
+
+### Game End Conditions
+- 5 riders finish
+- One player has all 3 riders at finish (NEW)
+- Round limit (150) hit
+- All cards run out
+
+## Available Agents
+
+14 agent types: `random`, `greedy`, `lead_rider`, `balanced`, `sprint_hunter`, `conservative`, `aggressive`, `adaptive`, `wheelsucker`, `gemini`, `claudebot`, `rouleur_focus`, `sprinter_focus`, `climber_focus`
+
+### Featured Agents
+
+**ClaudeBot** - Multi-factor scoring:
+- Terrain-aware movement (uses terrain limits strategically)
+- Sprint/finish targeting based on arrival order
+- Card economy and hand management
+- Drafting efficiency (free movement is valuable)
+- Rider specialization (right rider for right terrain)
+
+**Gemini** - Balanced scoring:
+- Total advancement (distance x riders)
+- Sprint/finish points potential
+- Card efficiency (penalizes card usage)
+- Checkpoint card drawing
+- Hand management (TeamCar when needed)
 
 ## Code Conventions
 
 - Dataclasses for all game entities (`Card`, `Rider`, `Player`, `Move`, etc.)
 - Enums for constants (`CardType`, `TerrainType`, `ActionType`, `PlayMode`)
 - Type hints on all function signatures and class attributes
-- Abstract base class pattern for agents (`Agent` ABC → concrete agents)
+- Abstract base class pattern for agents (`Agent` ABC -> concrete agents)
+- `eligible_riders` parameter in `choose_move()` for round-based turns
 - JSON for game logs, CSV for tournament results
-- No test framework configured; validation via `quick_test.py` runs
+- Unit tests in `test_terrain_limits.py`
+
+## Key Functions
+
+### game_engine.py
+- `TERRAIN_LIMITS` - Dict mapping (CardType, TerrainType) -> max fields
+- `_calculate_limited_movement()` - Apply terrain limits field-by-field
+- `get_valid_moves(player, eligible_riders)` - Get valid moves for eligible riders
+- `execute_move(move)` - Execute a move and return results
+
+### game_state.py
+- `start_new_round()` - Begin new round, rotate El Patron
+- `determine_next_turn()` - Get (player, eligible_riders) or None if round complete
+- `mark_riders_moved(riders, position)` - Mark riders as moved
+- `check_game_over()` - Check all end conditions
+
+### agents.py
+- `create_agent(agent_type, player_id)` - Factory function
+- `get_available_agents()` - List all agent names
+- All agents implement `choose_move(engine, player, eligible_riders)`
+
+## Recent Changes
+
+- Added terrain limits rule (Sprinter/Rouleur/Climber restrictions)
+- Added El Patron rule (rotating turn order for tied positions)
+- Added ClaudeBotAgent (terrain-aware multi-factor AI)
+- Added GeminiAgent (balanced scoring AI)
+- Round-based game loop (all riders move before new round)
+- Same player's riders can draft each other
+- Game ends when one player finishes all 3 riders

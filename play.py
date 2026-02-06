@@ -3,11 +3,117 @@ Chasse Patate - Interactive Play
 Play against AI bots in the terminal.
 """
 
+import json
+from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 from itertools import combinations
 from game_state import GameState, Card, CardType, ActionType, PlayMode, Rider, Player, TerrainType
 from game_engine import GameEngine, Move
 from agents import Agent, create_agent, get_available_agents
+
+
+# ---------------------------------------------------------------------------
+# Game Logger for interactive play
+# ---------------------------------------------------------------------------
+
+class PlayLogger:
+    """Logs interactive game information in the same format as simulator"""
+
+    def __init__(self, log_dir: str = "game_logs"):
+        self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(exist_ok=True)
+        self.game_info = {}
+        self.move_history = []
+
+    def _get_next_play_id(self) -> int:
+        """Find the next available play_XX.json ID"""
+        existing = list(self.log_dir.glob("play_*.json"))
+        if not existing:
+            return 0
+        ids = []
+        for f in existing:
+            try:
+                # Extract number from play_XX.json
+                num = int(f.stem.split("_")[1])
+                ids.append(num)
+            except (IndexError, ValueError):
+                pass
+        return max(ids) + 1 if ids else 0
+
+    def start_game(self, agents: List[Agent], num_players: int):
+        """Initialize logging for a new interactive game"""
+        self.move_history = []
+        self.game_id = self._get_next_play_id()
+
+        self.game_info = {
+            'game_id': self.game_id,
+            'timestamp': datetime.now().isoformat(),
+            'num_players': num_players,
+            'agents': [{'player_id': a.player_id, 'type': a.name} for a in agents],
+            'mode': 'interactive'
+        }
+
+    def log_turn(self, round_num: int, turn_num: int, player_id: int,
+                 move_result: dict, game_state: dict):
+        """Log a single turn within a round"""
+        turn_data = {
+            'round': round_num,
+            'turn': turn_num,
+            'player': player_id,
+            'move': move_result,
+            'state': game_state
+        }
+        self.move_history.append(turn_data)
+
+    def end_game(self, final_result: dict):
+        """Finalize and save game log"""
+        self.game_info['final_result'] = final_result
+        self.game_info['move_history'] = self.move_history
+
+        # Save detailed JSON log as play_XX.json
+        game_file = self.log_dir / f"play_{self.game_id}.json"
+        with open(game_file, 'w') as f:
+            json.dump(self.game_info, f, indent=2)
+
+        print(f"\nGame log saved to: {game_file}")
+        return self.game_info
+
+
+# ---------------------------------------------------------------------------
+# Player Colors (ANSI escape codes)
+# ---------------------------------------------------------------------------
+
+class Colors:
+    """ANSI color codes for terminal output"""
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+
+    # Player colors (bright/bold versions for visibility)
+    PLAYER_COLORS = [
+        "\033[91m",  # Player 0: Bright Red
+        "\033[94m",  # Player 1: Bright Blue
+        "\033[92m",  # Player 2: Bright Green
+        "\033[93m",  # Player 3: Bright Yellow
+        "\033[95m",  # Player 4: Bright Magenta
+    ]
+
+    @classmethod
+    def player(cls, player_id: int, text: str) -> str:
+        """Wrap text in player's color"""
+        color = cls.PLAYER_COLORS[player_id % len(cls.PLAYER_COLORS)]
+        return f"{color}{text}{cls.RESET}"
+
+    @classmethod
+    def bold(cls, text: str) -> str:
+        """Make text bold"""
+        return f"{cls.BOLD}{text}{cls.RESET}"
+
+    @classmethod
+    def player_bold(cls, player_id: int, text: str) -> str:
+        """Wrap text in player's color and make it bold"""
+        color = cls.PLAYER_COLORS[player_id % len(cls.PLAYER_COLORS)]
+        return f"{cls.BOLD}{color}{text}{cls.RESET}"
 
 
 # ---------------------------------------------------------------------------
@@ -107,20 +213,26 @@ def print_track(state: GameState):
     row_width = 20  # one row per tile (tiles are 20 fields)
     track_len = len(state.track)
 
-    # Build a mapping: position -> list of (player_id, rider_type_initial)
-    riders_by_pos: dict[int, list[str]] = {}
+    # Build a mapping: position -> list of (label, player_id) for coloring
+    riders_by_pos: dict[int, list[tuple[str, int]]] = {}
     for player in state.players:
         for rider in player.riders:
             pos = rider.position
             label = f"{player.player_id}{rider.rider_type.value[0]}"
-            riders_by_pos.setdefault(pos, []).append(label)
+            riders_by_pos.setdefault(pos, []).append((label, player.player_id))
 
     print("\n--- Track ---")
 
     # Legend
     legend_parts = [f"{sym}={name}" for sym, name in TERRAIN_SYMBOLS.values()]
     print(f"  Legend: {', '.join(legend_parts)}")
-    print(f"  Riders shown as <player><type>  (e.g. 0R = Player 0 Rouleur)")
+
+    # Player color legend
+    player_examples = []
+    for i in range(state.num_players):
+        example = Colors.player(i, f"P{i}")
+        player_examples.append(example)
+    print(f"  Players: {', '.join(player_examples)}  (e.g. 0R = Player 0 Rouleur)")
     print()
 
     for row_start in range(0, track_len, row_width):
@@ -159,10 +271,12 @@ def print_track(state: GameState):
         # --- Rider line ---
         rider_cells = []
         for pos in range(row_start, row_end):
-            labels = riders_by_pos.get(pos, [])
-            if labels:
+            riders_here = riders_by_pos.get(pos, [])
+            if riders_here:
                 # Show up to 1 label per cell; overflow goes to extra line
-                rider_cells.append(f"{labels[0]:>3}")
+                label, player_id = riders_here[0]
+                colored_label = Colors.player(player_id, f"{label:>3}")
+                rider_cells.append(colored_label)
             else:
                 rider_cells.append("   ")
 
@@ -174,9 +288,11 @@ def print_track(state: GameState):
         for layer in range(1, max_stack):
             cells = []
             for pos in range(row_start, row_end):
-                labels = riders_by_pos.get(pos, [])
-                if layer < len(labels):
-                    cells.append(f"{labels[layer]:>3}")
+                riders_here = riders_by_pos.get(pos, [])
+                if layer < len(riders_here):
+                    label, player_id = riders_here[layer]
+                    colored_label = Colors.player(player_id, f"{label:>3}")
+                    cells.append(colored_label)
                 else:
                     cells.append("   ")
             extra_lines.append("".join(cells))
@@ -195,7 +311,8 @@ def print_track(state: GameState):
     for player in state.players:
         for rider in player.riders:
             if rider.position >= track_len:
-                finished.append(f"P{player.player_id}R{rider.rider_id}({rider.rider_type.value[0]})")
+                label = f"P{player.player_id}R{rider.rider_id}({rider.rider_type.value[0]})"
+                finished.append(Colors.player(player.player_id, label))
     if finished:
         print(f"  Finished: {', '.join(finished)}")
         print()
@@ -212,8 +329,9 @@ def print_board(state: GameState):
             tile = state.get_tile_at_position(rider.position)
             terrain = tile.terrain.value if tile else "?"
             parts.append(f"{rider.rider_type.value}@{rider.position}[{terrain}]")
-        patron_tag = " [El Patron]" if player.player_id == state.el_patron else ""
-        print(f"  P{player.player_id} {player.name}{patron_tag}: {', '.join(parts)}  | pts={player.points} hand={len(player.hand)}")
+        patron_tag = Colors.bold(" [El Patron]") if player.player_id == state.el_patron else ""
+        player_label = Colors.player_bold(player.player_id, f"P{player.player_id} {player.name}")
+        print(f"  {player_label}{patron_tag}: {', '.join(parts)}  | pts={player.points} hand={len(player.hand)}")
     print(f"  Deck: {len(state.deck)}  Discard: {len(state.discard_pile)}")
     print()
 
@@ -319,8 +437,9 @@ class HumanAgent(Agent):
         riders = eligible_riders if eligible_riders is not None else player.riders
         terrain = self._current_terrain(engine, riders[0])
 
+        player_label = Colors.player_bold(self.player_id, f"Player {self.player_id}")
         print(f"\n{'='*50}")
-        print(f"  YOUR TURN  (Player {self.player_id})")
+        print(f"  YOUR TURN  ({player_label})")
         print(f"{'='*50}")
         print(f"Hand ({len(player.hand)} cards):")
         print(format_hand(player.hand, terrain))
@@ -563,13 +682,15 @@ def setup_game():
 
     for slot in range(num_players):
         labels = [f"{o}" for o in slot_options]
-        idx = prompt_choice(f"\nPlayer {slot}:", labels)
+        player_label = Colors.player_bold(slot, f"Player {slot}")
+        idx = prompt_choice(f"\n{player_label}:", labels)
         choice = slot_options[idx]
         if choice == "human":
             agents.append(HumanAgent(slot))
         else:
             agents.append(create_agent(choice, slot))
-        print(f"  -> Player {slot} = {agents[-1].name}")
+        colored_name = Colors.player(slot, agents[-1].name)
+        print(f"  -> {player_label} = {colored_name}")
 
     return num_players, agents
 
@@ -584,9 +705,16 @@ def play_game():
     state = GameState(num_players=num_players)
     engine = GameEngine(state)
 
+    # Initialize logger
+    logger = PlayLogger()
+    logger.start_game(agents, num_players)
+
     # Assign agent names to players
     for i, agent in enumerate(agents):
         state.players[i].name = agent.name
+
+    # Check if there are any human players (for pause-after-bot-turn feature)
+    has_human_players = any(isinstance(a, HumanAgent) for a in agents)
 
     print(f"\n{'='*60}")
     print(f"  GAME START  ({num_players} players)")
@@ -599,8 +727,9 @@ def play_game():
     while not state.game_over and state.current_round < max_rounds:
         state.start_new_round()
         patron = state.players[state.el_patron]
+        patron_label = Colors.player_bold(state.el_patron, f"{patron.name} (Player {state.el_patron})")
         print(f"\n{'~'*60}")
-        print(f"  ROUND {state.current_round}  |  El Patron: {patron.name} (Player {state.el_patron})")
+        print(f"  ROUND {state.current_round}  |  El Patron: {patron_label}")
         print(f"{'~'*60}")
 
         while True:
@@ -633,11 +762,26 @@ def play_game():
                 moved_riders.extend(move.drafting_riders)
             state.mark_riders_moved(moved_riders, acted_position)
 
+            # Log the turn
+            game_summary = state.get_game_summary()
+            logger.log_turn(state.current_round, turn_count,
+                           current_player.player_id,
+                           move_result, game_summary)
+
             # Print result
-            rider_names = ", ".join(f"P{r.player_id}R{r.rider_id}" for r in moved_riders)
-            print(f"  Turn {turn_count}: {agent.name} (P{current_player.player_id}) "
+            rider_names = ", ".join(
+                Colors.player(r.player_id, f"P{r.player_id}R{r.rider_id}")
+                for r in moved_riders
+            )
+            player_label = Colors.player_bold(current_player.player_id,
+                                              f"{agent.name} (P{current_player.player_id})")
+            print(f"  Turn {turn_count}: {player_label} "
                   f"- {move.action_type.value} [{rider_names}]")
             print_move_result(move_result, current_player)
+
+            # If this was a bot turn and there are human players, pause for review
+            if not is_human and has_human_players:
+                input("  [Press Enter to continue...]")
 
             turn_count += 1
             if state.check_game_over():
@@ -645,16 +789,45 @@ def play_game():
 
     # --- Game over -------------------------------------------------------
     final = engine.process_end_of_race()
+
+    # Add game over details to final result
+    reason = state.get_game_over_reason()
+    final['game_over_reason'] = reason
+    final['total_rounds'] = state.current_round
+    final['total_turns'] = turn_count
+
+    # Count riders at finish
+    finish_pos = state.track_length - 1
+    riders_at_finish = sum(1 for p in state.players for r in p.riders if r.position >= finish_pos)
+    final['riders_at_finish'] = riders_at_finish
+
+    # Save game log
+    logger.end_game(final)
+
     print(f"\n{'='*60}")
     print(f"  GAME OVER  after {state.current_round} rounds ({turn_count} turns)")
     print(f"{'='*60}")
     print()
     print("Final scores:")
-    for label, score in final["final_scores"].items():
-        print(f"  {label}: {score} points")
-    print(f"\nWinner: {final['winner']} with {final['winner_score']} points!")
+    for i, player in enumerate(state.players):
+        label = f"Player {i}"
+        score = final["final_scores"].get(label, 0)
+        player_label = Colors.player_bold(i, f"{label} ({player.name})")
+        print(f"  {player_label}: {score} points")
 
-    reason = state.get_game_over_reason()
+    # Find winner player_id from winner string
+    winner_str = final['winner']
+    winner_id = None
+    for i, player in enumerate(state.players):
+        if f"Player {i}" in winner_str or player.name in winner_str:
+            winner_id = i
+            break
+    if winner_id is not None:
+        winner_label = Colors.player_bold(winner_id, final['winner'])
+    else:
+        winner_label = Colors.bold(final['winner'])
+    print(f"\nWinner: {winner_label} with {final['winner_score']} points!")
+
     if reason:
         print(f"Reason: {reason}")
     print()

@@ -39,3 +39,4 @@ ENV/
 htmlcov/
 .coverage
 .coverage.*
+.claude/settings.local.json
