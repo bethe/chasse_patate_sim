@@ -318,6 +318,70 @@ def print_track(state: GameState):
         print()
 
 
+def print_card_reference_table():
+    """Print a reference table showing all card movement values for all terrains."""
+    print("\n" + "="*70)
+    print(Colors.bold("  CARD REFERENCE TABLE - Movement Values"))
+    print("="*70)
+
+    # Create sample cards of each type
+    energy_card = Card(CardType.ENERGY)
+    rouleur_card = Card(
+        CardType.ROULEUR,
+        pull_flat=2, pull_cobbles=1, pull_climb=1, pull_descent=3,
+        attack_flat=2, attack_cobbles=1, attack_climb=1, attack_descent=3
+    )
+    sprinter_card = Card(
+        CardType.SPRINTER,
+        pull_flat=1, pull_cobbles=1, pull_climb=0, pull_descent=3,
+        attack_flat=3, attack_cobbles=2, attack_climb=1, attack_descent=3
+    )
+    climber_card = Card(
+        CardType.CLIMBER,
+        pull_flat=0, pull_cobbles=0, pull_climb=2, pull_descent=3,
+        attack_flat=1, attack_cobbles=0, attack_climb=3, attack_descent=3
+    )
+
+    cards = [
+        ("Energy", energy_card),
+        ("Rouleur", rouleur_card),
+        ("Sprinter", sprinter_card),
+        ("Climber", climber_card)
+    ]
+
+    terrains = [
+        ("Flat", TerrainType.FLAT),
+        ("Cobbles", TerrainType.COBBLES),
+        ("Climb", TerrainType.CLIMB),
+        ("Descent", TerrainType.DESCENT)
+    ]
+
+    # Print header
+    print(f"\n  {'Card Type':<12} | {'Terrain':<8} | Pull | Attack")
+    print("  " + "-"*66)
+
+    for card_name, card in cards:
+        first_terrain = True
+        for terrain_name, terrain_type in terrains:
+            pull_val = card.get_movement(terrain_type, PlayMode.PULL)
+            attack_val = card.get_movement(terrain_type, PlayMode.ATTACK)
+
+            if first_terrain:
+                print(f"  {card_name:<12} | {terrain_name:<8} |  {pull_val}   |   {attack_val}")
+                first_terrain = False
+            else:
+                print(f"  {'':<12} | {terrain_name:<8} |  {pull_val}   |   {attack_val}")
+        print("  " + "-"*66)
+
+    print("\n" + Colors.bold("  TERRAIN LIMITS (Max fields per round):"))
+    print("  " + "-"*66)
+    print(f"  Sprinter on Climb:   3 fields max")
+    print(f"  Rouleur on Climb:    4 fields max")
+    print(f"  Climber on Cobbles:  3 fields max")
+    print("="*70)
+    print()
+
+
 def print_board(state: GameState):
     """Print a compact view of all rider positions plus track visualization."""
     print_track(state)
@@ -371,16 +435,25 @@ def print_move_result(result: dict, player: Player):
 # ---------------------------------------------------------------------------
 
 def prompt_choice(prompt: str, options: list, allow_cancel: bool = False) -> int:
-    """Ask user to pick one option by number. Returns index."""
+    """Ask user to pick one option by number. Returns index.
+
+    Special commands:
+    - 'r': Show card reference table
+    - 'c': Cancel (if allow_cancel=True)
+    """
     while True:
         print(prompt)
         for i, option in enumerate(options):
             print(f"  [{i}] {option}")
         if allow_cancel:
             print(f"  [c] Cancel / go back")
+        print(f"  [r] Show card reference table")
         raw = input("> ").strip().lower()
         if allow_cancel and raw == "c":
             return -1
+        if raw == "r":
+            print_card_reference_table()
+            continue  # Show prompt again
         try:
             idx = int(raw)
             if 0 <= idx < len(options):
@@ -392,7 +465,12 @@ def prompt_choice(prompt: str, options: list, allow_cancel: bool = False) -> int
 
 def prompt_multi_choice(prompt: str, options: list, min_sel: int = 1,
                         max_sel: int = None, allow_cancel: bool = False) -> Optional[List[int]]:
-    """Ask user to pick multiple options (comma-separated). Returns list of indices, or None if cancelled."""
+    """Ask user to pick multiple options (comma-separated). Returns list of indices, or None if cancelled.
+
+    Special commands:
+    - 'r': Show card reference table
+    - 'b': Go back (if allow_cancel=True)
+    """
     if max_sel is None:
         max_sel = len(options)
     while True:
@@ -402,10 +480,14 @@ def prompt_multi_choice(prompt: str, options: list, min_sel: int = 1,
         hint = f"  (select {min_sel}-{max_sel}, comma-separated)"
         if allow_cancel:
             hint += "  |  [b] go back"
+        hint += "  |  [r] reference"
         print(hint)
         raw = input("> ").strip().lower()
         if allow_cancel and raw == "b":
             return None
+        if raw == "r":
+            print_card_reference_table()
+            continue  # Show prompt again
         try:
             indices = [int(x.strip()) for x in raw.split(",")]
             if min_sel <= len(indices) <= max_sel and all(0 <= i < len(options) for i in indices):

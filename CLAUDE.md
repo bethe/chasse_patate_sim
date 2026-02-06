@@ -27,7 +27,7 @@ python generate_report.py
 # Usage examples and tutorials
 python example_usage.py
 
-# Play interactively against bots
+# Play interactively against bots (press 'r' during play to view card reference)
 python play.py
 
 # Run comprehensive unit tests for all game rules
