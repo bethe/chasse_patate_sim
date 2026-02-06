@@ -23,9 +23,10 @@ This simulator allows you to:
 ├── analysis.py            # Statistical analysis tools
 ├── play.py                # Interactive play mode
 ├── quick_test.py          # Fast balance testing script
+├── run_tournament.py      # Multi-player tournament runner (2/3/4 players)
 ├── example_usage.py       # Example scripts and tutorials
 ├── generate_report.py     # Standalone report generation
-├── test_terrain_limits.py # Unit tests for terrain limits
+├── test_game_rules.py     # Comprehensive unit tests (75+ tests)
 └── game_logs/             # Generated game logs (created automatically)
 ```
 
@@ -52,6 +53,25 @@ python quick_test.py
 ```
 
 Runs 50 games and shows win rates, score distribution, action usage, and game over reasons.
+
+### Run Comprehensive Tournament
+
+```bash
+python run_tournament.py
+```
+
+Runs a comprehensive multi-player tournament testing all agent combinations:
+- **2-player games**: All C(5,2) = 10 combinations × 10 games = 100 games
+- **3-player games**: All C(5,3) = 10 combinations × 10 games = 100 games
+- **4-player games**: All C(5,4) = 5 combinations × 10 games = 50 games
+- **Total**: 250 games (~10-20 minutes)
+
+Output includes:
+- Overall win rates and average scores by agent
+- Head-to-head matchup matrix (2-player)
+- Results broken down by player count
+- Game length and end reason statistics
+- Full CSV export: `game_logs/tournament_results_TIMESTAMP.csv`
 
 ## Game Rules
 

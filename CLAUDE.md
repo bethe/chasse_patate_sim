@@ -21,6 +21,9 @@ pip install -r requirements.txt
 # Quick balance test (10-50 games, shows win rates)
 python quick_test.py
 
+# Run comprehensive multi-player tournament (2/3/4 players, 250 games)
+python run_tournament.py
+
 # Generate analysis report from existing game logs
 python generate_report.py
 
@@ -44,12 +47,37 @@ python test_game_rules.py
 | `simulator.py` | Game execution, logging, batch runs, tournaments |
 | `analysis.py` | Statistical analysis and report generation |
 | `quick_test.py` | Fast balance testing script |
+| `run_tournament.py` | Multi-player tournament runner (2/3/4 players, all combinations) |
 | `generate_report.py` | Standalone report generator |
 | `example_usage.py` | Usage examples |
 | `play.py` | Interactive play against bots (terminal UI) |
 | `test_game_rules.py` | Comprehensive unit tests for all game rules and mechanics |
 
 Output goes to `game_logs/` (gitignored).
+
+## Tournament Mode
+
+The `run_tournament.py` script runs comprehensive multi-player tournaments:
+
+```bash
+python run_tournament.py
+```
+
+**What it does:**
+- Tests all agent combinations across 2, 3, and 4 players
+- 10 games per combination (250 total games)
+- Generates detailed statistics and head-to-head comparisons
+- Saves results to `game_logs/tournament_results_TIMESTAMP.csv`
+
+**Statistics provided:**
+- Overall win rates by agent
+- Average scores and total scores
+- Head-to-head matrix for 2-player matchups
+- Results breakdown by player count
+- Game length and end reason distribution
+
+**Customization:**
+Edit the script to change agents, games per combination, or player counts.
 
 ## Key Concepts
 
