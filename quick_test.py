@@ -22,7 +22,7 @@ def quick_balance_test():
     
     # Test most common strategies
     #test_agents = ['random', 'greedy', 'wheelsucker', 'aggressive', 'adaptive']
-    test_agents = ['wheelsucker', 'gemini', 'claudebot']
+    test_agents = ['chatgpt', 'gemini', 'claudebot']
     
     print(f"\nRunning tournament with agents: {test_agents}")
     tournament_results = simulator.run_tournament(
