@@ -823,6 +823,98 @@ class TestSprintAndFinishScoring(unittest.TestCase):
         self.assertEqual(len(arrivals), 3)
         self.assertEqual(arrivals, riders)
 
+    def test_multiple_riders_same_player_cross_finish_team_pull(self):
+        """When multiple riders from same player cross finish in TeamPull, each should get points"""
+        state = GameState(num_players=2, tile_config=[1])  # Single tile (20 fields)
+        engine = GameEngine(state)
+
+        player = state.players[0]
+        lead_rider = player.riders[0]
+        drafter = player.riders[1]
+
+        # Position both riders at position 18 (one before finish)
+        lead_rider.position = 18
+        drafter.position = 18
+
+        # Give player energy cards to move 2 fields (to position 19 = finish)
+        player.hand = [Card(CardType.ENERGY), Card(CardType.ENERGY)]
+
+        initial_points = player.points
+
+        # Execute TeamPull with both riders
+        move = Move(
+            ActionType.TEAM_PULL,
+            lead_rider,
+            player.hand[:2],
+            [drafter]
+        )
+
+        result = engine.execute_move(move)
+
+        self.assertTrue(result['success'])
+
+        # Both riders should cross finish at position 19
+        self.assertEqual(lead_rider.position, 19)
+        self.assertEqual(drafter.position, 19)
+
+        # Check that BOTH riders got points
+        # Lead rider arrives first: 12 points
+        # Drafter arrives second: 8 points
+        # Total: 20 points for the player
+        self.assertEqual(result['points_earned'], 20)
+        self.assertEqual(player.points, initial_points + 20)
+
+        # Verify both riders are recorded at the finish
+        self.assertEqual(len(state.sprint_arrivals[19]), 2)
+        self.assertIn(lead_rider, state.sprint_arrivals[19])
+        self.assertIn(drafter, state.sprint_arrivals[19])
+
+    def test_multiple_riders_same_player_cross_sprint_team_draft(self):
+        """When multiple riders from same player cross sprint in TeamDraft, each should get points"""
+        state = GameState(num_players=2, tile_config=[1, 1])  # Two tiles
+        engine = GameEngine(state)
+
+        # Set up a previous move to enable drafting
+        state.last_move = {
+            'action': 'Pull',
+            'rider': 'P1R0',  # Different player
+            'old_position': 18,
+            'movement': 2
+        }
+
+        player = state.players[0]
+        rider1 = player.riders[0]
+        rider2 = player.riders[1]
+
+        # Position both riders at position 18 (start of last move)
+        rider1.position = 18
+        rider2.position = 18
+
+        initial_points = player.points
+
+        # Execute TeamDraft with both riders
+        move = Move(
+            ActionType.TEAM_DRAFT,
+            rider1,
+            [],
+            [rider2]
+        )
+
+        result = engine.execute_move(move)
+
+        self.assertTrue(result['success'])
+
+        # Both riders should cross first sprint at position 19
+        self.assertEqual(rider1.position, 20)
+        self.assertEqual(rider2.position, 20)
+
+        # Check that BOTH riders got points for crossing position 19 (first tile finish/sprint)
+        # Position 19 is a sprint point (last field of first tile)
+        # First rider: 3 points, Second rider: 2 points
+        # Total: 5 points
+        self.assertGreater(result['points_earned'], 0)
+        self.assertGreater(player.points, initial_points)
+
 
 class TestCardTypes(unittest.TestCase):
     """Test card types and their movement values"""

@@ -762,7 +762,7 @@ class GameEngine:
             'cards_played': [],
             'num_cards': 0,
             'movement': base_draft_movement,
-            'points_earned': 0,
+            'points_earned': points_earned,
             'drafting_riders': drafting_results,
             'checkpoints_reached': checkpoints_reached if checkpoints_reached else None,
             'cards_drawn': cards_drawn
