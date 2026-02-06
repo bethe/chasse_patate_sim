@@ -30,8 +30,8 @@ python example_usage.py
 # Play interactively against bots
 python play.py
 
-# Run terrain limit unit tests
-python test_terrain_limits.py
+# Run comprehensive unit tests for all game rules
+python test_game_rules.py
 ```
 
 ## Project Structure
@@ -47,7 +47,7 @@ python test_terrain_limits.py
 | `generate_report.py` | Standalone report generator |
 | `example_usage.py` | Usage examples |
 | `play.py` | Interactive play against bots (terminal UI) |
-| `test_terrain_limits.py` | Unit tests for terrain limits |
+| `test_game_rules.py` | Comprehensive unit tests for all game rules and mechanics |
 
 Output goes to `game_logs/` (gitignored).
 
@@ -127,7 +127,7 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 - Abstract base class pattern for agents (`Agent` ABC -> concrete agents)
 - `eligible_riders` parameter in `choose_move()` for round-based turns
 - JSON for game logs, CSV for tournament results
-- Unit tests in `test_terrain_limits.py`
+- Comprehensive unit tests in `test_game_rules.py` (60+ tests covering all mechanics)
 
 ## Key Functions
 
