@@ -22,6 +22,7 @@ This simulator allows you to:
 ├── simulator.py           # Game simulation and logging
 ├── analysis.py            # Statistical analysis tools
 ├── play.py                # Interactive play mode
+├── game_analyzer.py       # Replay games from logs with visualization
 ├── quick_test.py          # Fast balance testing script
 ├── run_tournament.py      # Multi-player tournament runner (2/3/4 players)
 ├── example_usage.py       # Example scripts and tutorials
@@ -45,6 +46,29 @@ python play.py
 ```
 
 Play against AI bots interactively. Choose number of players (2-5) and assign human or bot to each slot.
+
+### Replay Games from Logs
+
+```bash
+# List available game logs
+python game_analyzer.py
+
+# Replay a game with pauses after each turn (interactive mode)
+python game_analyzer.py game_0.json
+
+# Replay without pausing between turns
+python game_analyzer.py game_0.json --no-pause-turns
+
+# Replay with no pauses at all (fast mode)
+python game_analyzer.py game_0.json --no-pause
+```
+
+Replays any game log with full visualization:
+- Turn-by-turn replay with track visualization
+- Shows all players' hands at each turn
+- Displays moves, cards played, and results
+- Same colorized output as interactive play
+- Works with both simulated (`game_*.json`) and interactive (`play_*.json`) logs
 
 ### Run a Quick Balance Test
 
@@ -189,9 +213,9 @@ Riders have maximum fields per round on certain terrain:
 1. Score points at sprints/finish when possible (maximize points)
 2. Hand management: TeamCar when ≤6 cards unless efficient move available (>1 field/card)
 3. Prefer efficient moves: TeamDraft > Draft > TeamPull
-4. Advance to fields with team riders (grouping)
+4. Advance to fields with team riders (only when moving forward to join riders ahead)
 5. When El Patron, position with opponent riders
-6. Maximize team advancement while respecting terrain limits
+6. Maximize team advancement while respecting terrain limits (with bonus for card efficiency)
 7. TeamCar if any isolated rider lacks good options
 
 ## Simulation API
