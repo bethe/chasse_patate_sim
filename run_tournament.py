@@ -16,7 +16,7 @@ Total: 250 games
 Results saved to: game_logs/tournament_results_TIMESTAMP.csv
 """
 
-from itertools import combinations
+from itertools import combinations, permutations
 from simulator import GameSimulator
 from agents import create_agent
 import pandas as pd
@@ -27,6 +27,9 @@ import os
 def run_multiplayer_tournament(agent_types, games_per_combination=10):
     """
     Run tournament with all combinations of agents for 2, 3, and 4 players
+
+    Games are distributed across all permutations of each combination to ensure
+    players experience different starting positions and minimize position bias.
 
     Args:
         agent_types: List of agent type strings (e.g., ['chatgpt', 'gemini', 'claudebot'])
@@ -71,45 +74,67 @@ def run_multiplayer_tournament(agent_types, games_per_combination=10):
             combo_str = ' vs '.join(combo)
             print(f"[{combo_num}/{len(combos)}] {combo_str}")
 
-            # Run multiple games for this combination
-            for game_num in range(games_per_combination):
-                try:
-                    # Create agents
-                    agents = [create_agent(agent_type, player_id)
-                             for player_id, agent_type in enumerate(combo)]
+            # Track results for this combination
+            combo_results = []
 
-                    # Run game
-                    game_log = sim.run_game(agents, game_id=total_games)
-                    total_games += 1
+            # Generate all permutations of this combination to alternate positions
+            perms = list(permutations(combo))
+            num_perms = len(perms)
 
-                    # Extract results
-                    final_result = game_log['final_result']
-                    final_scores = final_result['final_scores']
-                    winner = final_result['winner']
-                    game_over_reason = final_result.get('game_over_reason', 'unknown')
+            # Distribute games evenly across all permutations
+            games_per_perm = games_per_combination // num_perms
+            extra_games = games_per_combination % num_perms
 
-                    # Record result
-                    result = {
-                        'game_id': total_games - 1,
-                        'num_players': num_players,
-                        'combination': combo_str,
-                        'winner': winner,
-                        'game_over_reason': game_over_reason,
-                        'total_turns': len(game_log.get('move_history', []))
-                    }
+            perm_game_counts = [games_per_perm] * num_perms
+            # Distribute extra games
+            for i in range(extra_games):
+                perm_game_counts[i] += 1
 
-                    # Add individual player results
-                    for i, agent_type in enumerate(combo):
-                        result[f'player_{i}_agent'] = agent_type
-                        result[f'player_{i}_score'] = final_scores.get(f'Player {i}', 0)
+            # Run games for each permutation
+            for perm_idx, perm in enumerate(perms):
+                for game_num in range(perm_game_counts[perm_idx]):
+                    try:
+                        # Create agents in the permuted order
+                        agents = [create_agent(agent_type, player_id)
+                                 for player_id, agent_type in enumerate(perm)]
 
-                    all_results.append(result)
+                        # Run game
+                        game_log = sim.run_game(agents, game_id=total_games)
+                        total_games += 1
 
-                except Exception as e:
-                    print(f"  ERROR in game {total_games}: {e}")
-                    continue
+                        # Extract results
+                        final_result = game_log['final_result']
+                        final_scores = final_result['final_scores']
+                        winner = final_result['winner']
+                        game_over_reason = final_result.get('game_over_reason', 'unknown')
 
-            print(f"  Completed: {games_per_combination} games\n")
+                        # Record result
+                        result = {
+                            'game_id': total_games - 1,
+                            'num_players': num_players,
+                            'combination': combo_str,
+                            'winner': winner,
+                            'game_over_reason': game_over_reason,
+                            'total_turns': len(game_log.get('move_history', []))
+                        }
+
+                        # Add individual player results (using permuted order)
+                        for i, agent_type in enumerate(perm):
+                            result[f'player_{i}_agent'] = agent_type
+                            result[f'player_{i}_score'] = final_scores.get(f'Player {i}', 0)
+
+                        all_results.append(result)
+                        combo_results.append(result)
+
+                    except Exception as e:
+                        print(f"  ERROR in game {total_games}: {e}")
+                        continue
+
+            print(f"  Completed: {games_per_combination} games")
+
+            # Print position statistics for this combination
+            print_combination_stats(combo_results, combo, num_players)
+            print()
 
     # Create DataFrame
     df = pd.DataFrame(all_results)
@@ -130,6 +155,147 @@ def run_multiplayer_tournament(agent_types, games_per_combination=10):
     print_summary(df, agent_types)
 
     return df, filename
+
+
+def print_combination_stats(results_subset, combo, num_players):
+    """
+    Print quick position statistics for a completed combination
+
+    Args:
+        results_subset: List of result dicts for this combination
+        combo: Tuple of agent types in this combination
+        num_players: Number of players
+    """
+    if not results_subset:
+        return
+
+    # Count wins by agent and position
+    agent_position_wins = {}
+    agent_position_games = {}
+
+    for agent in combo:
+        agent_position_wins[agent] = {}
+        agent_position_games[agent] = {}
+        for pos in range(num_players):
+            agent_position_wins[agent][pos] = 0
+            agent_position_games[agent][pos] = 0
+
+    for result in results_subset:
+        # Determine winner
+        winner_agent = None
+        for i, agent in enumerate(combo):
+            if agent in result['winner'].lower():
+                winner_agent = agent
+                break
+
+        # Count games and wins by position
+        for pos in range(num_players):
+            agent_at_pos = result[f'player_{pos}_agent']
+            if agent_at_pos in agent_position_games:
+                agent_position_games[agent_at_pos][pos] += 1
+                if agent_at_pos == winner_agent:
+                    agent_position_wins[agent_at_pos][pos] += 1
+
+    # Print stats
+    print(f"  Position stats:")
+    for agent in combo:
+        position_strs = []
+        for pos in range(num_players):
+            games = agent_position_games[agent][pos]
+            wins = agent_position_wins[agent][pos]
+            if games > 0:
+                win_rate = (wins / games) * 100
+                position_strs.append(f"Pos{pos}: {wins}/{games} ({win_rate:.0f}%)")
+        if position_strs:
+            print(f"    {agent:15s}: {' | '.join(position_strs)}")
+
+
+def analyze_position_bias(df, agent_types):
+    """
+    Analyze wins by player position to detect position bias
+
+    Args:
+        df: DataFrame with tournament results
+        agent_types: List of agent type strings
+
+    Returns:
+        dict: Position statistics by agent and overall
+    """
+    position_stats = {}
+
+    for agent in agent_types:
+        position_stats[agent] = {}
+
+        # Analyze each player position
+        for num_players in df['num_players'].unique():
+            subset = df[df['num_players'] == num_players]
+
+            for pos in range(int(num_players)):
+                agent_col = f'player_{pos}_agent'
+
+                if agent_col not in subset.columns:
+                    continue
+
+                # Games where this agent was in this position
+                games_at_pos = subset[subset[agent_col] == agent]
+
+                if len(games_at_pos) == 0:
+                    continue
+
+                # Count wins
+                wins = len(games_at_pos[games_at_pos['winner'].str.contains(agent, case=False, na=False)])
+                win_rate = (wins / len(games_at_pos)) * 100 if len(games_at_pos) > 0 else 0
+
+                # Calculate average score
+                score_col = f'player_{pos}_score'
+                avg_score = games_at_pos[score_col].mean() if score_col in games_at_pos.columns else 0
+
+                key = f"{num_players}p_pos{pos}"
+                position_stats[agent][key] = {
+                    'games': len(games_at_pos),
+                    'wins': wins,
+                    'win_rate': win_rate,
+                    'avg_score': avg_score
+                }
+
+    # Calculate overall position bias (all agents combined)
+    overall_stats = {}
+    for num_players in df['num_players'].unique():
+        subset = df[df['num_players'] == num_players]
+
+        for pos in range(int(num_players)):
+            wins_at_pos = 0
+            total_at_pos = 0
+            scores_at_pos = []
+
+            for agent in agent_types:
+                agent_col = f'player_{pos}_agent'
+                if agent_col not in subset.columns:
+                    continue
+
+                games_at_pos = subset[subset[agent_col] == agent]
+                total_at_pos += len(games_at_pos)
+                wins_at_pos += len(games_at_pos[games_at_pos['winner'].str.contains(agent, case=False, na=False)])
+
+                score_col = f'player_{pos}_score'
+                if score_col in games_at_pos.columns:
+                    scores_at_pos.extend(games_at_pos[score_col].tolist())
+
+            win_rate = (wins_at_pos / total_at_pos * 100) if total_at_pos > 0 else 0
+            avg_score = sum(scores_at_pos) / len(scores_at_pos) if scores_at_pos else 0
+
+            key = f"{num_players}p_pos{pos}"
+            overall_stats[key] = {
+                'games': total_at_pos,
+                'wins': wins_at_pos,
+                'win_rate': win_rate,
+                'avg_score': avg_score
+            }
+
+    return {
+        'by_agent': position_stats,
+        'overall': overall_stats
+    }
 
 
 def print_summary(df, agent_types):
@@ -234,18 +400,62 @@ def print_summary(df, agent_types):
                 row += f" {h2h_matrix[agent1][agent2]:>8s}"
             print(row)
 
-    # 5. Game Over Reasons
+    # 5. Position Bias Analysis
     print("\n" + "=" * 80)
-    print("5. GAME OVER REASONS")
+    print("5. POSITION BIAS ANALYSIS")
+    print("=" * 80)
+    position_analysis = analyze_position_bias(df, agent_types)
+
+    # Overall position bias
+    print("\n  Overall Position Statistics:")
+    print("  " + "-" * 76)
+    for num_players in sorted([2, 3, 4]):
+        subset = df[df['num_players'] == num_players]
+        if len(subset) == 0:
+            continue
+
+        print(f"\n  {num_players}-Player Games:")
+        for pos in range(num_players):
+            key = f"{num_players}p_pos{pos}"
+            if key in position_analysis['overall']:
+                stats = position_analysis['overall'][key]
+                print(f"    Position {pos}: {stats['wins']:3d}/{stats['games']:3d} wins "
+                      f"({stats['win_rate']:5.1f}%) | avg score: {stats['avg_score']:5.1f}")
+
+    # Per-agent position statistics
+    print("\n  Position Statistics by Agent:")
+    print("  " + "-" * 76)
+    for agent in agent_types:
+        agent_stats = position_analysis['by_agent'].get(agent, {})
+        if not agent_stats:
+            continue
+
+        print(f"\n  {agent}:")
+        for num_players in sorted([2, 3, 4]):
+            positions_data = []
+            for pos in range(num_players):
+                key = f"{num_players}p_pos{pos}"
+                if key in agent_stats:
+                    stats = agent_stats[key]
+                    positions_data.append(
+                        f"Pos{pos}: {stats['wins']}/{stats['games']} ({stats['win_rate']:.1f}%)"
+                    )
+
+            if positions_data:
+                print(f"    {num_players}p: {' | '.join(positions_data)}")
+
+    # 6. Game Over Reasons
+    print("\n" + "=" * 80)
+    print("6. GAME OVER REASONS")
     print("=" * 80)
     reason_counts = df['game_over_reason'].value_counts()
     for reason, count in reason_counts.items():
         pct = (count / len(df)) * 100
         print(f"  {reason:45s}: {count:4d} ({pct:5.1f}%)")
 
-    # 6. Game Length Statistics
+    # 7. Game Length Statistics
     print("\n" + "=" * 80)
-    print("6. GAME LENGTH STATISTICS")
+    print("7. GAME LENGTH STATISTICS")
     print("=" * 80)
     if 'total_turns' in df.columns:
         for num_players in [2, 3, 4]:

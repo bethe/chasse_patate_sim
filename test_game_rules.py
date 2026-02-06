@@ -12,8 +12,9 @@ Tests all core game mechanics including:
 - Checkpoint mechanics
 - Round-based game flow
 - Agent behavior (TobiBot)
+- Tournament position alternation
 
-Total: 75+ unit tests
+Total: 80+ unit tests
 """
 
 import unittest
@@ -1578,6 +1579,128 @@ class TestTobiBotAgent(unittest.TestCase):
         # Verify game completed
         self.assertIn('final_result', result)
         self.assertIsNotNone(result['final_result'].get('winner'))
+
+
+class TestTournamentPositionAlternation(unittest.TestCase):
+    """Test that tournament positions are properly alternated"""
+
+    def test_position_alternation_two_player(self):
+        """Test that 2-player tournaments alternate positions properly"""
+        from run_tournament import run_multiplayer_tournament
+
+        # Run a mini tournament with 2 agents, 10 games
+        agents = ['random', 'marc_soler']
+
+        df, _ = run_multiplayer_tournament(
+            agent_types=agents,
+            games_per_combination=10
+        )
+
+        # Check 2-player games
+        two_player = df[df['num_players'] == 2]
+
+        for agent in agents:
+            pos0_games = len(two_player[two_player['player_0_agent'] == agent])
+            pos1_games = len(two_player[two_player['player_1_agent'] == agent])
+
+            # For 10 games with 2 permutations, each should be at each position 5 times
+            self.assertEqual(pos0_games, 5,
+                           f"{agent} should play 5 games at position 0, got {pos0_games}")
+            self.assertEqual(pos1_games, 5,
+                           f"{agent} should play 5 games at position 1, got {pos1_games}")
+
+    def test_position_distribution_three_player(self):
+        """Test that 3-player tournaments distribute positions"""
+        from run_tournament import run_multiplayer_tournament
+
+        # Run with 3 agents, 12 games (divisible by 6 permutations)
+        agents = ['random', 'marc_soler', 'balanced']
+
+        df, _ = run_multiplayer_tournament(
+            agent_types=agents,
+            games_per_combination=12
+        )
+
+        # Check 3-player games
+        three_player = df[df['num_players'] == 3]
+
+        for agent in agents:
+            pos0_games = len(three_player[three_player['player_0_agent'] == agent])
+            pos1_games = len(three_player[three_player['player_1_agent'] == agent])
+            pos2_games = len(three_player[three_player['player_2_agent'] == agent])
+
+            # With 12 games and 6 permutations, each position should have 4 games
+            self.assertEqual(pos0_games, 4,
+                           f"{agent} should play 4 games at position 0, got {pos0_games}")
+            self.assertEqual(pos1_games, 4,
+                           f"{agent} should play 4 games at position 1, got {pos1_games}")
+            self.assertEqual(pos2_games, 4,
+                           f"{agent} should play 4 games at position 2, got {pos2_games}")
+
+    def test_position_alternation_fairness(self):
+        """Test that position alternation creates fair matchups"""
+        from run_tournament import run_multiplayer_tournament
+
+        # Run with 2 agents to check fairness
+        agents = ['random', 'marc_soler']
+
+        df, _ = run_multiplayer_tournament(
+            agent_types=agents,
+            games_per_combination=10
+        )
+
+        two_player = df[df['num_players'] == 2]
+
+        # Each agent should play equal games at each position
+        for agent in agents:
+            total_games = len(two_player[
+                (two_player['player_0_agent'] == agent) |
+                (two_player['player_1_agent'] == agent)
+            ])
+
+            # Should play exactly 10 games total
+            self.assertEqual(total_games, 10,
+                           f"{agent} should play 10 total games, got {total_games}")
+
+    def test_analyze_position_bias_function(self):
+        """Test the analyze_position_bias function"""
+        from run_tournament import run_multiplayer_tournament, analyze_position_bias
+        import pandas as pd
+
+        # Run a small tournament
+        agents = ['random', 'marc_soler']
+
+        df, _ = run_multiplayer_tournament(
+            agent_types=agents,
+            games_per_combination=10
+        )
+
+        # Analyze position bias
+        analysis = analyze_position_bias(df, agents)
+
+        # Check structure
+        self.assertIn('by_agent', analysis)
+        self.assertIn('overall', analysis)
+
+        # Check that each agent has position stats
+        for agent in agents:
+            self.assertIn(agent, analysis['by_agent'])
+            agent_stats = analysis['by_agent'][agent]
+
+            # Should have 2-player position stats
+            self.assertIn('2p_pos0', agent_stats)
+            self.assertIn('2p_pos1', agent_stats)
+
+            # Each position should have the required fields
+            for key in ['2p_pos0', '2p_pos1']:
+                self.assertIn('games', agent_stats[key])
+                self.assertIn('wins', agent_stats[key])
+                self.assertIn('win_rate', agent_stats[key])
+                self.assertIn('avg_score', agent_stats[key])
+
+        # Check overall stats
+        self.assertIn('2p_pos0', analysis['overall'])
+        self.assertIn('2p_pos1', analysis['overall'])
 
 
 if __name__ == '__main__':

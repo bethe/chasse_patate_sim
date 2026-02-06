@@ -26,7 +26,7 @@ This simulator allows you to:
 ├── run_tournament.py      # Multi-player tournament runner (2/3/4 players)
 ├── example_usage.py       # Example scripts and tutorials
 ├── generate_report.py     # Standalone report generation
-├── test_game_rules.py     # Comprehensive unit tests (75+ tests)
+├── test_game_rules.py     # Comprehensive unit tests (80+ tests)
 └── game_logs/             # Generated game logs (created automatically)
 ```
 
@@ -65,10 +65,13 @@ Runs a comprehensive multi-player tournament testing all agent combinations:
 - **3-player games**: All C(5,3) = 10 combinations × 10 games = 100 games
 - **4-player games**: All C(5,4) = 5 combinations × 10 games = 50 games
 - **Total**: 250 games (~10-20 minutes)
+- **Position alternation**: Games are distributed across all permutations to minimize position bias
 
 Output includes:
 - Overall win rates and average scores by agent
 - Head-to-head matchup matrix (2-player)
+- **Position bias analysis** (wins by player position)
+- Position statistics after each combination completes
 - Results broken down by player count
 - Game length and end reason statistics
 - Full CSV export: `game_logs/tournament_results_TIMESTAMP.csv`
@@ -312,10 +315,20 @@ Generated reports include:
 ## Running Tests
 
 ```bash
-python test_terrain_limits.py
+python test_game_rules.py
 ```
 
-Runs 13 unit tests for terrain limit functionality.
+Runs 80+ comprehensive unit tests covering:
+- Terrain limits
+- El Patron rule and turn order
+- Game end conditions
+- Card mechanics and move validation
+- Drafting rules
+- Sprint and finish scoring
+- Checkpoint mechanics
+- Round-based game flow
+- Agent behavior (TobiBot)
+- Tournament position alternation
 
 ## Recent Updates
 

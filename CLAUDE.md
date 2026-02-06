@@ -51,7 +51,7 @@ python test_game_rules.py
 | `generate_report.py` | Standalone report generator |
 | `example_usage.py` | Usage examples |
 | `play.py` | Interactive play against bots (terminal UI) |
-| `test_game_rules.py` | Comprehensive unit tests for all game rules and mechanics |
+| `test_game_rules.py` | Comprehensive unit tests: game rules, mechanics, agents, tournament features |
 
 Output goes to `game_logs/` (gitignored).
 
@@ -66,13 +66,18 @@ python run_tournament.py
 **What it does:**
 - Tests all agent combinations across 2, 3, and 4 players
 - 10 games per combination (250 total games)
+- **Alternates player positions** to minimize position bias
 - Generates detailed statistics and head-to-head comparisons
 - Saves results to `game_logs/tournament_results_TIMESTAMP.csv`
+
+**Position Alternation:**
+Games are distributed across all permutations of each combination to ensure agents experience different starting positions equally. For example, in 2-player games with 10 games per combination, each agent plays 5 games as Player 0 and 5 games as Player 1.
 
 **Statistics provided:**
 - Overall win rates by agent
 - Average scores and total scores
 - Head-to-head matrix for 2-player matchups
+- **Position bias analysis** (wins by player position)
 - Results breakdown by player count
 - Game length and end reason distribution
 
@@ -165,7 +170,7 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 - Abstract base class pattern for agents (`Agent` ABC -> concrete agents)
 - `eligible_riders` parameter in `choose_move()` for round-based turns
 - JSON for game logs, CSV for tournament results
-- Comprehensive unit tests in `test_game_rules.py` (75+ tests covering all mechanics and agents)
+- Comprehensive unit tests in `test_game_rules.py` (80+ tests covering all mechanics, agents, and tournament features)
 
 ## Key Functions
 
