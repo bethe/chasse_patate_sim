@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Set, Tuple
 from enum import Enum
 import random
+from game_config import GameConfig, get_config
 
 
 class CardType(Enum):
@@ -249,15 +250,20 @@ class GameState:
         ],
     }
     
-    def __init__(self, num_players: int, tile_config: List[int] = None):
+    def __init__(self, num_players: int, tile_config: List[int] = None, config: GameConfig = None):
         assert 2 <= num_players <= 5, "Game supports 2-5 players"
-        
+
         self.num_players = num_players
-        
-        # Use default tile configuration if none provided
+
+        # Load configuration (use provided config, or load from file)
+        if config is None:
+            config = get_config()
+        self.config = config
+
+        # Use tile configuration from config if not explicitly provided
         if tile_config is None:
-            tile_config = DEFAULT_RACE_CONFIG
-        
+            tile_config = config.tile_config
+
         self.tile_config = tile_config
         self.track_length = len(tile_config) * 20  # Each tile is 20 fields
         
@@ -300,46 +306,52 @@ class GameState:
         self.round_positions_history: List[Dict[int, int]] = []
 
     def _deal_initial_hands(self):
-        """Deal initial hands according to game rules:
-        - 3 Energy cards
-        - 1 Rouleur, 1 Sprinter, 1 Climber card
-        - 3 random cards from remaining deck
-        Total: 9 cards per player"""
-        
+        """Deal initial hands according to configuration.
+        Uses config.starting_hand to determine card composition."""
+
+        hand_config = self.config.starting_hand
+
         # First, separate the deck by card type for easier dealing
         energy_cards = [c for c in self.deck if c.card_type == CardType.ENERGY]
         rouleur_cards = [c for c in self.deck if c.card_type == CardType.ROULEUR]
         sprinter_cards = [c for c in self.deck if c.card_type == CardType.SPRINTER]
         climber_cards = [c for c in self.deck if c.card_type == CardType.CLIMBER]
-        
+
         # Clear deck, we'll rebuild it after dealing
         self.deck = []
-        
+
         for player in self.players:
             hand = []
-            
-            # Deal 3 Energy cards
-            for _ in range(3):
+
+            # Deal configured number of Energy cards
+            for _ in range(hand_config.energy_cards):
                 if energy_cards:
                     hand.append(energy_cards.pop(0))
-            
-            # Deal exactly 1 of each rider card type
-            if rouleur_cards:
-                hand.append(rouleur_cards.pop(0))
-            if sprinter_cards:
-                hand.append(sprinter_cards.pop(0))
-            if climber_cards:
-                hand.append(climber_cards.pop(0))
-            
+
+            # Deal configured number of Rouleur cards
+            for _ in range(hand_config.rouleur_cards):
+                if rouleur_cards:
+                    hand.append(rouleur_cards.pop(0))
+
+            # Deal configured number of Sprinter cards
+            for _ in range(hand_config.sprinter_cards):
+                if sprinter_cards:
+                    hand.append(sprinter_cards.pop(0))
+
+            # Deal configured number of Climber cards
+            for _ in range(hand_config.climber_cards):
+                if climber_cards:
+                    hand.append(climber_cards.pop(0))
+
             player.hand = hand
-        
+
         # Rebuild deck with remaining cards
         self.deck = energy_cards + rouleur_cards + sprinter_cards + climber_cards
         random.shuffle(self.deck)
-        
-        # Now deal 3 random cards to each player from the shuffled remaining deck
+
+        # Now deal configured number of random cards to each player from shuffled remaining deck
         for player in self.players:
-            for _ in range(3):
+            for _ in range(hand_config.random_cards):
                 if self.deck:
                     player.hand.append(self.deck.pop(0))
     

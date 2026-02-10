@@ -15,6 +15,32 @@ Chasse Patate — a cycling board game balance simulator. Runs thousands of AI-v
 pip install -r requirements.txt
 ```
 
+## Configuration
+
+The game supports customizable parameters through `config.json`. See `CONFIG_GUIDE.md` for full documentation.
+
+**Quick start:**
+```bash
+# View current configuration
+python config_manager.py show
+
+# Validate configuration
+python config_manager.py validate
+
+# Create a preset (quick, marathon, mountain, cobbles)
+python config_manager.py preset quick
+
+# Reset to defaults
+python config_manager.py reset
+```
+
+**Configurable parameters:**
+- **Tile configuration**: Which race tiles to use and in what order
+- **Starting hand**: Card composition at game start (Energy, Rouleur, Sprinter, Climber, random)
+- **Checkpoint draws**: How many cards drawn at field 10, 20, 40 checkpoints
+
+All scripts automatically load `config.json` when creating games.
+
 ## Running
 
 ```bash
@@ -46,9 +72,11 @@ python test_game_rules.py
 |---|---|
 | `game_state.py` | Core data structures: cards, riders, players, board, El Patron rule |
 | `game_engine.py` | Game rules, move validation, terrain limits |
+| `game_config.py` | Configuration system for game parameters |
 | `agents.py` | AI agent implementations (15 strategies) |
 | `simulator.py` | Game execution, logging, batch runs, tournaments |
 | `analysis.py` | Statistical analysis and report generation |
+| `config_manager.py` | Configuration management utility |
 | `quick_test.py` | Fast balance testing script |
 | `run_tournament.py` | Multi-player tournament runner (2/3/4 players, all combinations) |
 | `generate_report.py` | Standalone report generator |
@@ -56,6 +84,8 @@ python test_game_rules.py
 | `play.py` | Interactive play against bots (terminal UI) |
 | `game_analyzer.py` | Replay games from logs with full visualization |
 | `test_game_rules.py` | Comprehensive unit tests: game rules, mechanics, agents, tournament features |
+| `config.json` | Game configuration file (tiles, starting hand, checkpoints) |
+| `CONFIG_GUIDE.md` | Comprehensive configuration documentation |
 
 Output goes to `game_logs/` (gitignored).
 
@@ -197,6 +227,11 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 
 ## Recent Changes
 
+- **Added game configuration system** (`config.json`, `game_config.py`, `config_manager.py`)
+  - Customizable tile configuration
+  - Configurable starting hand composition
+  - Adjustable checkpoint card draws
+  - Auto-loaded by all game scripts
 - Added terrain limits rule (Sprinter/Rouleur/Climber restrictions)
 - Added El Patron rule (rotating turn order for tied positions)
 - Added ClaudeBotAgent (terrain-aware multi-factor AI)

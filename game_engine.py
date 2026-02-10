@@ -414,16 +414,17 @@ class GameEngine:
         # Check if rider reached new checkpoint(s) (every 10 fields)
         cards_drawn = 0
         checkpoints_reached = []
-        
+
         # Check all checkpoints from old position to new position
         for checkpoint in range(10, new_position + 1, 10):
             if checkpoint > old_position and not self.state.has_rider_reached_checkpoint(move.rider, checkpoint):
                 # This is a new checkpoint for this rider
                 self.state.mark_checkpoint_reached(move.rider, checkpoint)
                 checkpoints_reached.append(checkpoint)
-                
-                # Draw 3 cards for this checkpoint
-                for _ in range(3):
+
+                # Draw cards for this checkpoint (amount depends on checkpoint position)
+                num_cards_to_draw = self.state.config.checkpoints.get_cards_for_checkpoint(checkpoint)
+                for _ in range(num_cards_to_draw):
                     new_card = self.state.draw_card()
                     if new_card:
                         player.hand.append(new_card)
@@ -621,9 +622,10 @@ class GameEngine:
                 self.state.mark_checkpoint_reached(move.rider, checkpoint)
                 if checkpoint not in checkpoints_reached:
                     checkpoints_reached.append(checkpoint)
-                
-                # Draw 3 cards for this checkpoint
-                for _ in range(3):
+
+                # Draw cards for this checkpoint (amount depends on checkpoint position)
+                num_cards_to_draw = self.state.config.checkpoints.get_cards_for_checkpoint(checkpoint)
+                for _ in range(num_cards_to_draw):
                     new_card = self.state.draw_card()
                     if new_card:
                         player.hand.append(new_card)
@@ -644,9 +646,10 @@ class GameEngine:
                         self.state.mark_checkpoint_reached(drafter_rider, checkpoint)
                         if checkpoint not in checkpoints_reached:
                             checkpoints_reached.append(checkpoint)
-                        
-                        # Draw 3 cards for this checkpoint
-                        for _ in range(3):
+
+                        # Draw cards for this checkpoint (amount depends on checkpoint position)
+                        num_cards_to_draw = self.state.config.checkpoints.get_cards_for_checkpoint(checkpoint)
+                        for _ in range(num_cards_to_draw):
                             new_card = self.state.draw_card()
                             if new_card:
                                 player.hand.append(new_card)
@@ -742,9 +745,10 @@ class GameEngine:
                         self.state.mark_checkpoint_reached(drafter_rider, checkpoint)
                         if checkpoint not in checkpoints_reached:
                             checkpoints_reached.append(checkpoint)
-                        
-                        # Draw 3 cards for this checkpoint
-                        for _ in range(3):
+
+                        # Draw cards for this checkpoint (amount depends on checkpoint position)
+                        num_cards_to_draw = self.state.config.checkpoints.get_cards_for_checkpoint(checkpoint)
+                        for _ in range(num_cards_to_draw):
                             new_card = self.state.draw_card()
                             if new_card:
                                 player.hand.append(new_card)
