@@ -466,17 +466,17 @@ def prompt_choice(prompt: str, options: list, allow_cancel: bool = False) -> int
     Special commands:
     - 'm': Show player manual
     - 'r': Show card reference table
-    - 'c': Cancel (if allow_cancel=True)
+    - 'b': Go back (if allow_cancel=True)
     """
     while True:
         print(prompt)
         for i, option in enumerate(options):
             print(f"  [{i}] {option}")
         if allow_cancel:
-            print(f"  [c] Cancel / go back")
+            print(f"  [b] Go back")
         print(f"  [m] Show player manual  |  [r] Show card reference table")
         raw = input("> ").strip().lower()
-        if allow_cancel and raw == "c":
+        if allow_cancel and raw == "b":
             return -1
         if raw == "m":
             print_manual()
