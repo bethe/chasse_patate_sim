@@ -635,10 +635,14 @@ class HumanAgent(Agent):
             return self._handle_team_car(engine, player, rider, terrain)
 
         if action == ActionType.TEAM_DRAFT:
-            return self._handle_team_draft(filtered, rider)
+            # Only show options where the chosen rider is the primary rider
+            primary_moves = [m for m in filtered if m.rider == rider]
+            return self._handle_team_draft(primary_moves, rider)
 
         if action == ActionType.TEAM_PULL:
-            return self._handle_team_pull(engine, player, filtered, rider, terrain)
+            # Only show options where the chosen rider is the primary rider
+            primary_moves = [m for m in filtered if m.rider == rider]
+            return self._handle_team_pull(engine, player, primary_moves, rider, terrain)
 
         # Pull or Attack: pick cards
         return self._handle_card_action(engine, player, action, rider, terrain)
