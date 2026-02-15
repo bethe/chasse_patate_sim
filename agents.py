@@ -996,11 +996,15 @@ class TobiBotAgent(Agent):
             for move in valid_moves:
                 if move.action_type == ActionType.TEAM_CAR:
                     continue
+                advancement = calculate_total_advancement(engine, move)
+                # Skip moves with 0 advancement
+                if advancement == 0:
+                    continue
                 cards_used = len(move.cards)
                 if cards_used == 0:
+                    # Free move with advancement > 0 is efficient
                     has_efficient_move = True
                     break
-                advancement = calculate_total_advancement(engine, move)
                 if advancement / cards_used > 1:
                     has_efficient_move = True
                     break
@@ -1013,25 +1017,33 @@ class TobiBotAgent(Agent):
                         team_car_moves[0].cards = [worst_card]
                     return team_car_moves[0]
 
-        # Priority 3: Prefer efficient moves
+        # Priority 3: Prefer efficient moves (filter out 0-advancement moves)
         # TeamDraft
-        team_draft_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_DRAFT]
+        team_draft_moves = [m for m in valid_moves
+                           if m.action_type == ActionType.TEAM_DRAFT
+                           and calculate_total_advancement(engine, m) > 0]
         if team_draft_moves:
             return max(team_draft_moves, key=lambda m: calculate_total_advancement(engine, m))
 
         # Draft
-        draft_moves = [m for m in valid_moves if m.action_type == ActionType.DRAFT]
+        draft_moves = [m for m in valid_moves
+                      if m.action_type == ActionType.DRAFT
+                      and calculate_total_advancement(engine, m) > 0]
         if draft_moves:
             return max(draft_moves, key=lambda m: calculate_total_advancement(engine, m))
 
         # TeamPull
-        team_pull_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_PULL]
+        team_pull_moves = [m for m in valid_moves
+                          if m.action_type == ActionType.TEAM_PULL
+                          and calculate_total_advancement(engine, m) > 0]
         if team_pull_moves:
             # Apply priority 4-6 to select best TeamPull
             return self._select_best_move(team_pull_moves, engine, player)
 
-        # Apply priorities 4-6 to remaining moves
-        non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
+        # Apply priorities 4-6 to remaining moves (excluding TeamCar and 0-advancement moves)
+        non_team_car = [m for m in valid_moves
+                       if m.action_type != ActionType.TEAM_CAR
+                       and calculate_total_advancement(engine, m) > 0]
         if non_team_car:
             return self._select_best_move(non_team_car, engine, player)
 
