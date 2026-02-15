@@ -125,7 +125,7 @@ def quick_balance_test():
     print("QUICK TEST COMPLETE")
     print("="*80)
     print(f"\nDetailed logs saved to: {simulator.logger.log_dir}")
-    print("For comprehensive analysis, run: analyzer.generate_report(logs)")
+    print("For comprehensive analysis: GameAnalyzer('game_logs').generate_report(logs)")
     print("="*80 + "\n")
 
 

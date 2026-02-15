@@ -18,20 +18,16 @@ This simulator allows you to:
 .
 ├── game_state.py          # Core game state, cards, El Patron rule
 ├── game_engine.py         # Game rules, move validation, terrain limits
-├── game_config.py         # Configuration system for game parameters
+├── game_config.py         # Configuration system and CLI management
 ├── agents.py              # AI agent implementations (15 types)
 ├── simulator.py           # Game simulation and logging
 ├── analysis.py            # Statistical analysis tools
 ├── play.py                # Interactive play mode
 ├── game_analyzer.py       # Replay games from logs with visualization
-├── config_manager.py      # Configuration management utility
 ├── quick_test.py          # Fast balance testing script
 ├── run_tournament.py      # Multi-player tournament runner (2/3/4 players)
-├── generate_report.py     # Standalone report generation
-├── example_usage.py       # Example scripts and tutorials
 ├── test_game_rules.py     # Comprehensive unit tests (80+ tests)
 ├── config.json            # Game configuration file
-├── config.example.json    # Example config with inline comments
 └── game_logs/             # Generated game logs (created automatically)
 ```
 
@@ -59,15 +55,6 @@ python quick_test.py
 
 Runs 50 games and shows win rates, score distribution, action usage, and game over reasons.
 
-### Generate Analysis Report
-
-```bash
-# First run some games, then:
-python generate_report.py
-```
-
-Creates `game_logs/analysis_report.txt` with win rates, score distributions, card usage, game length stats, and dominant strategy detection.
-
 ### Replay Games from Logs
 
 ```bash
@@ -94,13 +81,13 @@ Runs 80+ unit tests covering all game mechanics, agents, and tournament features
 
 ## Configuration
 
-The game is configured through `config.json`, which all scripts load automatically. See `config.example.json` for a commented reference.
+The game is configured through `config.json`, which all scripts load automatically.
 
 ```bash
-python config_manager.py show       # View current config
-python config_manager.py validate   # Validate config.json
-python config_manager.py reset      # Reset to defaults
-python config_manager.py preset quick       # Presets: quick, marathon, mountain, cobbles
+python game_config.py show       # View current config
+python game_config.py validate   # Validate config.json
+python game_config.py reset      # Reset to defaults
+python game_config.py preset quick       # Presets: quick, marathon, mountain, cobbles
 ```
 
 ### Tile Configuration

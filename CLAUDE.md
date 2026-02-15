@@ -17,21 +17,21 @@ pip install -r requirements.txt
 
 ## Configuration
 
-The game supports customizable parameters through `config.json`. See `CONFIG_GUIDE.md` for full documentation.
+The game supports customizable parameters through `config.json`.
 
 **Quick start:**
 ```bash
 # View current configuration
-python config_manager.py show
+python game_config.py show
 
 # Validate configuration
-python config_manager.py validate
+python game_config.py validate
 
 # Create a preset (quick, marathon, mountain, cobbles)
-python config_manager.py preset quick
+python game_config.py preset quick
 
 # Reset to defaults
-python config_manager.py reset
+python game_config.py reset
 ```
 
 **Configurable parameters:**
@@ -50,12 +50,6 @@ python quick_test.py
 # Run comprehensive multi-player tournament (2/3/4 players, 250 games)
 python run_tournament.py
 
-# Generate analysis report from existing game logs
-python generate_report.py
-
-# Usage examples and tutorials
-python example_usage.py
-
 # Play interactively against bots (press 'r' during play to view card reference)
 python play.py
 
@@ -72,20 +66,16 @@ python test_game_rules.py
 |---|---|
 | `game_state.py` | Core data structures: cards, riders, players, board, El Patron rule |
 | `game_engine.py` | Game rules, move validation, terrain limits |
-| `game_config.py` | Configuration system for game parameters |
+| `game_config.py` | Configuration system, CLI management, presets |
 | `agents.py` | AI agent implementations (15 strategies) |
 | `simulator.py` | Game execution, logging, batch runs, tournaments |
 | `analysis.py` | Statistical analysis and report generation |
-| `config_manager.py` | Configuration management utility |
 | `quick_test.py` | Fast balance testing script |
 | `run_tournament.py` | Multi-player tournament runner (2/3/4 players, all combinations) |
-| `generate_report.py` | Standalone report generator |
-| `example_usage.py` | Usage examples |
 | `play.py` | Interactive play against bots (terminal UI) |
 | `game_analyzer.py` | Replay games from logs with full visualization |
 | `test_game_rules.py` | Comprehensive unit tests: game rules, mechanics, agents, tournament features |
 | `config.json` | Game configuration file (tiles, starting hand, checkpoints) |
-| `CONFIG_GUIDE.md` | Comprehensive configuration documentation |
 
 Output goes to `game_logs/` (gitignored).
 
@@ -227,7 +217,7 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 
 ## Recent Changes
 
-- **Added game configuration system** (`config.json`, `game_config.py`, `config_manager.py`)
+- **Added game configuration system** (`config.json`, `game_config.py`)
   - Customizable tile configuration
   - Configurable starting hand composition
   - Adjustable checkpoint card draws
