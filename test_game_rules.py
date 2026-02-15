@@ -1732,6 +1732,17 @@ class TestTournamentPositionAlternation(unittest.TestCase):
         self.assertIn('2p_pos1', analysis['overall'])
 
 
+class TestAgentWastefulMoves(unittest.TestCase):
+    """Test that agents never choose moves that cost cards but have 0 advancement"""
+
+    def test_no_wasteful_moves(self):
+        """All agents should avoid choosing moves that cost cards but result in 0 advancement"""
+        from agents import verify_no_wasteful_moves
+
+        result = verify_no_wasteful_moves()
+        self.assertTrue(result, "Some agents chose wasteful moves (cost cards but 0 advancement)")
+
+
 if __name__ == '__main__':
     # Reset to default config so tests aren't affected by config.json
     set_config(GameConfig())
