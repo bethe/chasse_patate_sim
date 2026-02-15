@@ -27,25 +27,20 @@ class StartingHandConfig:
 @dataclass
 class CheckpointConfig:
     """Configuration for card drawing at checkpoints"""
-    checkpoint_10_cards: int = 3  # Cards drawn at field 10 of each tile
-    checkpoint_20_cards: int = 3  # Cards drawn at field 20 of each tile (last field of tile 1)
-    checkpoint_40_cards: int = 3  # Cards drawn at field 40 of each tile (last field of tile 2)
+    mid_tile_checkpoint: int = 3  # Cards drawn at mid-tile (field 10, 30, 50, ...)
+    new_tile_checkpoint: int = 3  # Cards drawn at tile boundary (field 20, 40, 60, ...)
 
     def get_cards_for_checkpoint(self, checkpoint: int) -> int:
         """Get number of cards to draw for a specific checkpoint position"""
         # Checkpoints are at positions 10, 20, 30, 40, 50, 60...
-        # Map to the appropriate configuration
+        # Mid-tile checkpoints: 10, 30, 50, ... (field 10 within each tile)
+        # New-tile checkpoints: 20, 40, 60, ... (last field of each tile)
         field_in_tile = checkpoint % 20
 
         if field_in_tile == 10:
-            return self.checkpoint_10_cards
-        elif checkpoint == 20 or (checkpoint % 40 == 20 and checkpoint != 20):
-            return self.checkpoint_20_cards
-        elif checkpoint % 40 == 0:
-            return self.checkpoint_40_cards
+            return self.mid_tile_checkpoint
         else:
-            # Default to checkpoint_10_cards for any other checkpoint
-            return self.checkpoint_10_cards
+            return self.new_tile_checkpoint
 
 
 @dataclass
@@ -79,9 +74,8 @@ class GameConfig:
                 'random_cards': self.starting_hand.random_cards
             },
             'checkpoints': {
-                'checkpoint_10_cards': self.checkpoints.checkpoint_10_cards,
-                'checkpoint_20_cards': self.checkpoints.checkpoint_20_cards,
-                'checkpoint_40_cards': self.checkpoints.checkpoint_40_cards
+                'mid_tile_checkpoint': self.checkpoints.mid_tile_checkpoint,
+                'new_tile_checkpoint': self.checkpoints.new_tile_checkpoint
             }
         }
 
@@ -103,12 +97,10 @@ class GameConfig:
                          f"exceeds total deck size (90)")
 
         # Validate checkpoint configuration
-        if self.checkpoints.checkpoint_10_cards < 0:
-            errors.append("checkpoint_10_cards cannot be negative")
-        if self.checkpoints.checkpoint_20_cards < 0:
-            errors.append("checkpoint_20_cards cannot be negative")
-        if self.checkpoints.checkpoint_40_cards < 0:
-            errors.append("checkpoint_40_cards cannot be negative")
+        if self.checkpoints.mid_tile_checkpoint < 0:
+            errors.append("mid_tile_checkpoint cannot be negative")
+        if self.checkpoints.new_tile_checkpoint < 0:
+            errors.append("new_tile_checkpoint cannot be negative")
 
         return errors
 

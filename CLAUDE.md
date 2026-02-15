@@ -37,7 +37,7 @@ python config_manager.py reset
 **Configurable parameters:**
 - **Tile configuration**: Which race tiles to use and in what order
 - **Starting hand**: Card composition at game start (Energy, Rouleur, Sprinter, Climber, random)
-- **Checkpoint draws**: How many cards drawn at field 10, 20, 40 checkpoints
+- **Checkpoint draws**: How many cards drawn at mid-tile and new-tile checkpoints
 
 All scripts automatically load `config.json` when creating games.
 

@@ -23,6 +23,7 @@ from game_state import (
     Rider, Player, ActionType
 )
 from game_engine import GameEngine, Move, TERRAIN_LIMITS
+from game_config import GameConfig, set_config
 
 
 class TestTerrainLimits(unittest.TestCase):
@@ -1732,4 +1733,6 @@ class TestTournamentPositionAlternation(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    # Reset to default config so tests aren't affected by config.json
+    set_config(GameConfig())
     unittest.main()

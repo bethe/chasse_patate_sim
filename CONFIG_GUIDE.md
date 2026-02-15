@@ -72,24 +72,22 @@ Configure how many cards are drawn when riders cross checkpoints:
 ```json
 {
   "checkpoints": {
-    "checkpoint_10_cards": 3,
-    "checkpoint_20_cards": 3,
-    "checkpoint_40_cards": 3
+    "mid_tile_checkpoint": 3,
+    "new_tile_checkpoint": 3
   }
 }
 ```
 
 **Checkpoint positions:**
-- **checkpoint_10_cards**: Cards at field 10, 30, 50, 70, 90... (middle of each tile)
-- **checkpoint_20_cards**: Cards at field 20, 60, 100... (end of tiles 1, 3, 5, etc.)
-- **checkpoint_40_cards**: Cards at field 40, 80, 120... (end of tiles 2, 4, 6, etc.)
+- **mid_tile_checkpoint**: Cards at field 10, 30, 50, 70, 90... (middle of each tile)
+- **new_tile_checkpoint**: Cards at field 20, 40, 60, 80, 100... (tile boundaries)
 
 **Default**: 3 cards at each checkpoint
 
 **Examples:**
-- More resources: All set to `5`
-- Scarce resources: All set to `1`
-- Graduated rewards: `"checkpoint_10_cards": 1, "checkpoint_20_cards": 2, "checkpoint_40_cards": 5`
+- More resources: Both set to `5`
+- Scarce resources: Both set to `1`
+- Reward tile transitions: `"mid_tile_checkpoint": 1, "new_tile_checkpoint": 3`
 
 ## Using the Configuration
 
@@ -122,7 +120,7 @@ state = GameState(num_players=2, config=config)
 config = GameConfig(
     tile_config=[1, 2, 3],
     starting_hand=StartingHandConfig(energy_cards=5),
-    checkpoints=CheckpointConfig(checkpoint_10_cards=5)
+    checkpoints=CheckpointConfig(mid_tile_checkpoint=5)
 )
 state = GameState(num_players=2, config=config)
 ```
@@ -177,9 +175,8 @@ Or manually edit `config.json` to match the values in `config.example.json`.
     "random_cards": 5
   },
   "checkpoints": {
-    "checkpoint_10_cards": 5,
-    "checkpoint_20_cards": 5,
-    "checkpoint_40_cards": 5
+    "mid_tile_checkpoint": 5,
+    "new_tile_checkpoint": 5
   }
 }
 ```
@@ -196,9 +193,8 @@ Or manually edit `config.json` to match the values in `config.example.json`.
     "random_cards": 1
   },
   "checkpoints": {
-    "checkpoint_10_cards": 1,
-    "checkpoint_20_cards": 1,
-    "checkpoint_40_cards": 2
+    "mid_tile_checkpoint": 1,
+    "new_tile_checkpoint": 1
   }
 }
 ```
@@ -215,9 +211,8 @@ Or manually edit `config.json` to match the values in `config.example.json`.
     "random_cards": 2
   },
   "checkpoints": {
-    "checkpoint_10_cards": 4,
-    "checkpoint_20_cards": 4,
-    "checkpoint_40_cards": 4
+    "mid_tile_checkpoint": 4,
+    "new_tile_checkpoint": 4
   }
 }
 ```

@@ -22,13 +22,10 @@
 
   "_comment_checkpoints": "Configure card drawing at checkpoints (every 10 fields: 10, 20, 30, 40, 50, 60...)",
   "checkpoints": {
-    "_comment_10": "Cards drawn at field 10 of each tile (and 30, 50, etc.)",
-    "checkpoint_10_cards": 3,
+    "_comment_mid": "Cards drawn at mid-tile checkpoints (field 10, 30, 50, ...)",
+    "mid_tile_checkpoint": 3,
 
-    "_comment_20": "Cards drawn at field 20 of each tile (last field of tile 1, also 60, 100, etc.)",
-    "checkpoint_20_cards": 3,
-
-    "_comment_40": "Cards drawn at field 40 of each tile (last field of tile 2, also 80, 120, etc.)",
-    "checkpoint_40_cards": 3
+    "_comment_new": "Cards drawn at tile boundary checkpoints (field 20, 40, 60, ...)",
+    "new_tile_checkpoint": 3
   }
 }

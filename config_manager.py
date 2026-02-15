@@ -42,9 +42,8 @@ def show_config(config_path: str = "config.json"):
 
     print("\nCHECKPOINT CARD DRAWS:")
     cp = config.checkpoints
-    print(f"  At field 10, 30, 50... : {cp.checkpoint_10_cards} cards")
-    print(f"  At field 20, 60, 100...: {cp.checkpoint_20_cards} cards")
-    print(f"  At field 40, 80, 120...: {cp.checkpoint_40_cards} cards")
+    print(f"  Mid-tile (field 10, 30, 50...): {cp.mid_tile_checkpoint} cards")
+    print(f"  New tile (field 20, 40, 60...): {cp.new_tile_checkpoint} cards")
 
     print("\n" + "="*60 + "\n")
 
@@ -104,9 +103,8 @@ def create_preset(preset_name: str, output_path: str = None):
                 "random_cards": 3
             },
             "checkpoints": {
-                "checkpoint_10_cards": 5,
-                "checkpoint_20_cards": 5,
-                "checkpoint_40_cards": 5
+                "mid_tile_checkpoint": 5,
+                "new_tile_checkpoint": 5
             }
         },
         "marathon": {
@@ -119,9 +117,8 @@ def create_preset(preset_name: str, output_path: str = None):
                 "random_cards": 1
             },
             "checkpoints": {
-                "checkpoint_10_cards": 1,
-                "checkpoint_20_cards": 1,
-                "checkpoint_40_cards": 2
+                "mid_tile_checkpoint": 1,
+                "new_tile_checkpoint": 1
             }
         },
         "mountain": {
@@ -134,9 +131,8 @@ def create_preset(preset_name: str, output_path: str = None):
                 "random_cards": 2
             },
             "checkpoints": {
-                "checkpoint_10_cards": 4,
-                "checkpoint_20_cards": 4,
-                "checkpoint_40_cards": 4
+                "mid_tile_checkpoint": 4,
+                "new_tile_checkpoint": 4
             }
         },
         "cobbles": {
@@ -149,9 +145,8 @@ def create_preset(preset_name: str, output_path: str = None):
                 "random_cards": 2
             },
             "checkpoints": {
-                "checkpoint_10_cards": 4,
-                "checkpoint_20_cards": 4,
-                "checkpoint_40_cards": 4
+                "mid_tile_checkpoint": 4,
+                "new_tile_checkpoint": 4
             }
         }
     }
