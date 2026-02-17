@@ -148,20 +148,73 @@ def get_best_draft_move(valid_moves: List[Move]) -> Optional[Move]:
     return None
 
 
-def choose_card_to_discard(player: Player) -> Optional[Card]:
-    """Helper function to choose worst card to discard (Energy first)
-    Note: This should be called BEFORE drawing in TeamCar, to pre-select the card type.
-    After drawing, the actual card instance will be selected during execution."""
+def choose_card_to_discard(player: Player, engine: 'GameEngine' = None) -> Optional[Card]:
+    """Choose the best card to discard for TeamCar.
+
+    Priority:
+    1. Discard cards of riders already at the finish (useless)
+    2. Discard the card type most present in hand (seek balance)
+    3. Tie-break: discard the card least valuable to its rider on current terrain
+    4. Final tie-break: random
+    """
     if not player.hand:
-        # If hand is empty, we'll discard an Energy after drawing
-        # Return None for now, execution will handle it
         return None
-    # Prefer discarding Energy cards
-    energy_cards = [c for c in player.hand if c.is_energy_card()]
-    if energy_cards:
-        return energy_cards[0]
-    # Otherwise discard first card
-    return player.hand[0]
+
+    # Without engine context, just discard the most common card type
+    if not engine:
+        counts = {}
+        for card in player.hand:
+            counts[card.card_type] = counts.get(card.card_type, 0) + 1
+        most_common = max(counts, key=counts.get)
+        return next(c for c in player.hand if c.card_type == most_common)
+
+    finish_pos = engine.state.track_length - 1
+    finished_rider_types = set()
+    unfinished_riders = []
+    for rider in player.riders:
+        if rider.position >= finish_pos:
+            finished_rider_types.add(rider.rider_type)
+        else:
+            unfinished_riders.append(rider)
+
+    # (1) Discard cards of finished riders first
+    finished_cards = [c for c in player.hand if c.card_type in finished_rider_types]
+    if finished_cards:
+        return finished_cards[0]
+
+    # Remaining cards are all potentially useful — group by type
+    counts = {}
+    for card in player.hand:
+        counts[card.card_type] = counts.get(card.card_type, 0) + 1
+
+    # (2) Find the card type(s) most present in hand
+    max_count = max(counts.values())
+    most_common_types = [ct for ct, n in counts.items() if n == max_count]
+
+    if len(most_common_types) == 1:
+        return next(c for c in player.hand if c.card_type == most_common_types[0])
+
+    # (3) Tie-break: least valuable to unfinished riders on their current terrain
+    # For each tied card type, compute its max pull value across unfinished riders
+    type_values = {}
+    for card_type in most_common_types:
+        best_val = 0
+        sample_card = next(c for c in player.hand if c.card_type == card_type)
+        for rider in unfinished_riders:
+            # A rider card can only be played by its matching rider (or Energy by any)
+            if sample_card.is_energy_card() or card_type == rider.rider_type:
+                tile = engine.state.get_tile_at_position(rider.position)
+                if tile:
+                    val = sample_card.get_movement(tile.terrain, PlayMode.PULL)
+                    best_val = max(best_val, val)
+        type_values[card_type] = best_val
+
+    min_value = min(type_values.values())
+    least_valuable = [ct for ct, v in type_values.items() if v == min_value]
+
+    # (4) Final tie-break: random
+    chosen_type = random.choice(least_valuable)
+    return next(c for c in player.hand if c.card_type == chosen_type)
 
 
 class Agent(ABC):
@@ -226,7 +279,7 @@ class MarcSolerAgent(Agent):
             if should_use_team_car(player, valid_moves):
                 team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
                 if team_car_moves:
-                    worst_card = choose_card_to_discard(player)
+                    worst_card = choose_card_to_discard(player, engine)
                     if worst_card:
                         team_car_moves[0].cards = [worst_card]
                     return team_car_moves[0]
@@ -245,7 +298,7 @@ class MarcSolerAgent(Agent):
         if filtered_moves:
             best_move = filtered_moves[0]
             if best_move.action_type == ActionType.TEAM_CAR and not best_move.cards:
-                worst_card = choose_card_to_discard(player)
+                worst_card = choose_card_to_discard(player, engine)
                 if worst_card:
                     best_move.cards = [worst_card]
             return best_move
@@ -507,6 +560,14 @@ class ClaudeBotAgent(Agent):
 
     def _score_team_car(self, player: Player, engine: GameEngine) -> float:
         """Score TeamCar action"""
+        # If any unfinished rider exists, strongly prefer any forward movement over TeamCar
+        finish_pos = engine.state.track_length - 1
+        unfinished_riders = [r for r in player.riders if r.position < finish_pos]
+        finished_count = len(player.riders) - len(unfinished_riders)
+        if finished_count >= 2 and unfinished_riders:
+            # Last rider(s) still need to advance — don't loop on TeamCar
+            return -200
+
         hand_size = len(player.hand)
 
         # TeamCar is valuable when hand is low
@@ -589,7 +650,7 @@ class WheelsuckerAgent(Agent):
         # Priority 7: TeamCar
         team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
         if team_car_moves:
-            worst_card = choose_card_to_discard(player)
+            worst_card = choose_card_to_discard(player, engine)
             if worst_card:
                 team_car_moves[0].cards = [worst_card]
             return team_car_moves[0]
@@ -674,7 +735,7 @@ class GeminiAgent(Agent):
 
         # If TeamCar is selected, ensure we pick a card to discard
         if best_move.action_type == ActionType.TEAM_CAR and not best_move.cards:
-            worst_card = choose_card_to_discard(player)
+            worst_card = choose_card_to_discard(player, engine)
             if worst_card:
                 best_move.cards = [worst_card]
 
@@ -801,7 +862,7 @@ class TobiBotAgent(Agent):
 
         # Priority 2: Hand management - TeamCar if hand ≤ 6 and no efficient moves
         if len(player.hand) <= 6:
-            # Check if any move has >1 field per card
+            # Check if any move has >=1 field per card
             has_efficient_move = False
             for move in valid_moves:
                 if move.action_type == ActionType.TEAM_CAR:
@@ -815,14 +876,14 @@ class TobiBotAgent(Agent):
                     # Free move with advancement > 0 is efficient
                     has_efficient_move = True
                     break
-                if advancement / cards_used > 1:
+                if advancement / cards_used >= 1:
                     has_efficient_move = True
                     break
 
             if not has_efficient_move:
                 team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
                 if team_car_moves:
-                    worst_card = choose_card_to_discard(player)
+                    worst_card = choose_card_to_discard(player, engine)
                     if worst_card:
                         team_car_moves[0].cards = [worst_card]
                     return team_car_moves[0]
@@ -872,7 +933,7 @@ class TobiBotAgent(Agent):
                     if not can_draft and not can_advance_far:
                         team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
                         if team_car_moves:
-                            worst_card = choose_card_to_discard(player)
+                            worst_card = choose_card_to_discard(player, engine)
                             if worst_card:
                                 team_car_moves[0].cards = [worst_card]
                             return team_car_moves[0]
@@ -1042,7 +1103,7 @@ class ClaudeBot2Agent(Agent):
 
         # PRIORITY 2: Hand management - TeamCar if hand ≤ 6 and no efficient moves
         if len(player.hand) <= 6:
-            # Check if any move has >1 field per card efficiency
+            # Check if any move has >=1 field per card efficiency
             has_efficient_move = False
             for move in valid_moves:
                 if move.action_type == ActionType.TEAM_CAR:
@@ -1054,14 +1115,14 @@ class ClaudeBot2Agent(Agent):
                 if cards_used == 0:
                     has_efficient_move = True
                     break
-                if advancement / cards_used > 1.0:
+                if advancement / cards_used >= 1.0:
                     has_efficient_move = True
                     break
 
             if not has_efficient_move:
                 team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
                 if team_car_moves:
-                    worst_card = choose_card_to_discard(player)
+                    worst_card = choose_card_to_discard(player, engine)
                     if worst_card:
                         team_car_moves[0].cards = [worst_card]
                     return team_car_moves[0]
@@ -1076,7 +1137,7 @@ class ClaudeBot2Agent(Agent):
             # Fallback to TeamCar if nothing productive
             team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
             if team_car_moves:
-                worst_card = choose_card_to_discard(player)
+                worst_card = choose_card_to_discard(player, engine)
                 if worst_card:
                     team_car_moves[0].cards = [worst_card]
                 return team_car_moves[0]
@@ -1110,7 +1171,7 @@ class ClaudeBot2Agent(Agent):
         # Last resort: TeamCar
         team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
         if team_car_moves:
-            worst_card = choose_card_to_discard(player)
+            worst_card = choose_card_to_discard(player, engine)
             if worst_card:
                 team_car_moves[0].cards = [worst_card]
             return team_car_moves[0]
@@ -1320,7 +1381,7 @@ class ChatGPTAgent(Agent):
             if should_use_team_car(player, valid_moves):
                 team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
                 if team_car_moves:
-                    worst_card = choose_card_to_discard(player)
+                    worst_card = choose_card_to_discard(player, engine)
                     if worst_card:
                         team_car_moves[0].cards = [worst_card]
                     return team_car_moves[0]
@@ -1337,7 +1398,7 @@ class ChatGPTAgent(Agent):
         best_move = scored_moves[0][1]
 
         if best_move.action_type == ActionType.TEAM_CAR and not best_move.cards:
-            worst_card = choose_card_to_discard(player)
+            worst_card = choose_card_to_discard(player, engine)
             if worst_card:
                 best_move.cards = [worst_card]
 
