@@ -471,7 +471,7 @@ def print_summary(df, agent_types):
 
 if __name__ == "__main__":
     # Define agents for tournament
-    agents = ['chatgpt', 'gemini', 'claudebot', 'tobibot', 'marc_soler']
+    agents = ['chatgpt', 'gemini', 'claudebot', 'tobibot', 'claudebot2']
 
     print("\nStarting comprehensive tournament...")
     print(f"This will run approximately 250 games (may take 10-20 minutes)\n")

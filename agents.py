@@ -1317,6 +1317,302 @@ class TobiBotAgent(Agent):
         return moves[0]
 
 
+class ClaudeBot2Agent(Agent):
+    """
+    ClaudeBot 2.0: Redesigned based on comprehensive 250-game analysis.
+
+    Adopts TobiBot's proven priority hierarchy approach (97.1% win rate):
+    1. Score points when possible (finish > sprint priority)
+    2. Hand management: TeamCar if hand ≤ 6 AND no efficient move (>1 field/card)
+    3. Prefer efficient moves: TeamDraft > Draft > TeamPull > Pull
+    4. Maximize advancement with terrain-aware optimization
+    5. Position strategically (group with teammates ahead, draft opponents)
+
+    Key metrics to achieve (from winning data):
+    - Card efficiency: <0.40 cards/field (vs losers' 0.50)
+    - Early game: 90+ fields in first third
+    - Free movement: 3+ drafts per game
+    - Finish points: 15+ from finish line
+    - Hand management: 4+ average cards
+
+    Strategy: Strict priority hierarchy with efficiency gating, not weighted scoring.
+    """
+
+    def __init__(self, player_id: int):
+        super().__init__(player_id, "ClaudeBot2.0")
+        from game_engine import TERRAIN_LIMITS
+        self.terrain_limits = TERRAIN_LIMITS
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
+        """Choose move using TobiBot-inspired priority hierarchy"""
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
+        if not valid_moves:
+            return None
+
+        # PRIORITY 1: Score points when possible (finish > sprint)
+        scoring_moves = self._get_scoring_moves(valid_moves, engine)
+        if scoring_moves:
+            # Return move that scores most points, preferring finish over sprint
+            return max(scoring_moves, key=lambda m: self._calculate_points_with_priority(m, engine))
+
+        # PRIORITY 2: Hand management - TeamCar if hand ≤ 6 and no efficient moves
+        if len(player.hand) <= 6:
+            # Check if any move has >1 field per card efficiency
+            has_efficient_move = False
+            for move in valid_moves:
+                if move.action_type == ActionType.TEAM_CAR:
+                    continue
+                advancement = calculate_total_advancement(engine, move)
+                if advancement == 0:
+                    continue
+                cards_used = len(move.cards)
+                if cards_used == 0:
+                    has_efficient_move = True
+                    break
+                if advancement / cards_used > 1.0:
+                    has_efficient_move = True
+                    break
+
+            if not has_efficient_move:
+                team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+                if team_car_moves:
+                    worst_card = choose_card_to_discard(player)
+                    if worst_card:
+                        team_car_moves[0].cards = [worst_card]
+                    return team_car_moves[0]
+
+        # PRIORITY 3: Prefer efficient free movement (TeamDraft > Draft > TeamPull)
+        # Filter out 0-advancement moves
+        productive_moves = [m for m in valid_moves
+                           if m.action_type != ActionType.TEAM_CAR
+                           and calculate_total_advancement(engine, m) > 0]
+
+        if not productive_moves:
+            # Fallback to TeamCar if nothing productive
+            team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+            if team_car_moves:
+                worst_card = choose_card_to_discard(player)
+                if worst_card:
+                    team_car_moves[0].cards = [worst_card]
+                return team_car_moves[0]
+            return valid_moves[0] if valid_moves else None
+
+        # TeamDraft: Multiple riders move for free
+        team_draft_moves = [m for m in productive_moves if m.action_type == ActionType.TEAM_DRAFT]
+        if team_draft_moves:
+            return max(team_draft_moves, key=lambda m: calculate_total_advancement(engine, m))
+
+        # Draft: Single rider moves for free
+        draft_moves = [m for m in productive_moves if m.action_type == ActionType.DRAFT]
+        if draft_moves:
+            return max(draft_moves, key=lambda m: calculate_total_advancement(engine, m))
+
+        # TeamPull: One rider pulls, others draft (efficient team coordination)
+        team_pull_moves = [m for m in productive_moves if m.action_type == ActionType.TEAM_PULL]
+        if team_pull_moves:
+            return self._select_best_team_pull(team_pull_moves, engine, player)
+
+        # PRIORITY 4: Remaining moves (Pull, Attack) - select with terrain optimization
+        remaining_moves = [m for m in productive_moves
+                          if m.action_type in [ActionType.PULL, ActionType.ATTACK]]
+        if remaining_moves:
+            return self._select_best_advancement_move(remaining_moves, engine, player)
+
+        # Fallback: any productive move
+        if productive_moves:
+            return max(productive_moves, key=lambda m: calculate_total_advancement(engine, m))
+
+        # Last resort: TeamCar
+        team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+        if team_car_moves:
+            worst_card = choose_card_to_discard(player)
+            if worst_card:
+                team_car_moves[0].cards = [worst_card]
+            return team_car_moves[0]
+
+        return valid_moves[0] if valid_moves else None
+
+    def _get_scoring_moves(self, valid_moves: List[Move], engine: GameEngine) -> List[Move]:
+        """Get moves that can score points at sprint or finish"""
+        scoring_moves = []
+        for move in valid_moves:
+            if move.action_type == ActionType.TEAM_CAR:
+                continue
+            if self._calculate_points(move, engine) > 0:
+                scoring_moves.append(move)
+        return scoring_moves
+
+    def _calculate_points(self, move: Move, engine: GameEngine) -> int:
+        """Calculate total points this move would score"""
+        points = 0
+        riders = [move.rider]
+        if move.drafting_riders:
+            riders.extend(move.drafting_riders)
+
+        for rider in riders:
+            distance = self._get_rider_movement(move, rider, engine)
+            if distance == 0:
+                continue
+
+            old_pos = rider.position
+            new_pos = min(old_pos + distance, engine.state.track_length - 1)
+
+            for pos in range(old_pos + 1, new_pos + 1):
+                tile = engine.state.get_tile_at_position(pos)
+                if tile and tile.terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
+                    arrivals = engine.state.sprint_arrivals.get(pos, [])
+                    if rider in arrivals:
+                        continue
+                    current_rank = len(arrivals)
+                    if tile.sprint_points and current_rank < len(tile.sprint_points):
+                        points += tile.sprint_points[current_rank]
+        return points
+
+    def _calculate_points_with_priority(self, move: Move, engine: GameEngine) -> float:
+        """Calculate points with finish line heavily prioritized over sprints"""
+        finish_points = 0
+        sprint_points = 0
+
+        riders = [move.rider]
+        if move.drafting_riders:
+            riders.extend(move.drafting_riders)
+
+        for rider in riders:
+            distance = self._get_rider_movement(move, rider, engine)
+            if distance == 0:
+                continue
+
+            old_pos = rider.position
+            new_pos = min(old_pos + distance, engine.state.track_length - 1)
+
+            for pos in range(old_pos + 1, new_pos + 1):
+                tile = engine.state.get_tile_at_position(pos)
+                if tile and tile.terrain == TerrainType.FINISH:
+                    arrivals = engine.state.sprint_arrivals.get(pos, [])
+                    if rider not in arrivals:
+                        current_rank = len(arrivals)
+                        if tile.sprint_points and current_rank < len(tile.sprint_points):
+                            finish_points += tile.sprint_points[current_rank]
+                elif tile and tile.terrain == TerrainType.SPRINT:
+                    arrivals = engine.state.sprint_arrivals.get(pos, [])
+                    if rider not in arrivals:
+                        current_rank = len(arrivals)
+                        if tile.sprint_points and current_rank < len(tile.sprint_points):
+                            sprint_points += tile.sprint_points[current_rank]
+
+        # Finish points are 55% of winner's score, weight them 3x higher
+        return finish_points * 3.0 + sprint_points
+
+    def _get_rider_movement(self, move: Move, rider: Rider, engine: GameEngine) -> int:
+        """Get movement for a specific rider in a move"""
+        if rider == move.rider:
+            # Primary rider
+            if move.action_type == ActionType.PULL:
+                base = engine._calculate_pull_movement(move.rider, move.cards)
+            elif move.action_type == ActionType.ATTACK:
+                base = engine._calculate_attack_movement(move.rider, move.cards)
+            elif move.action_type in [ActionType.DRAFT, ActionType.TEAM_DRAFT]:
+                base = engine.state.last_move.get('movement', 0) if engine.state.last_move else 0
+            elif move.action_type == ActionType.TEAM_PULL:
+                base = engine._calculate_pull_movement(move.rider, move.cards)
+            else:
+                return 0
+            return engine._calculate_limited_movement(rider, rider.position, base)
+        else:
+            # Drafting rider
+            if move.action_type == ActionType.TEAM_PULL:
+                base = engine._calculate_pull_movement(move.rider, move.cards)
+            elif move.action_type == ActionType.TEAM_DRAFT:
+                base = engine.state.last_move.get('movement', 0) if engine.state.last_move else 0
+            else:
+                return 0
+            return engine._calculate_limited_movement(rider, rider.position, base)
+
+    def _select_best_team_pull(self, moves: List[Move], engine: GameEngine, player: Player) -> Move:
+        """Select best TeamPull considering efficiency and positioning"""
+        scored_moves = []
+
+        for move in moves:
+            score = 0.0
+
+            # Base score: total advancement
+            total_advancement = calculate_total_advancement(engine, move)
+            score += total_advancement * 10
+
+            # Card efficiency bonus
+            cards_used = len(move.cards)
+            if cards_used > 0 and total_advancement > 0:
+                efficiency = total_advancement / cards_used
+                score += efficiency * 20  # Reward high efficiency
+
+            # Bonus for grouping riders together (team coordination)
+            destination = min(move.rider.position + self._get_rider_movement(move, move.rider, engine),
+                            engine.state.track_length - 1)
+            riders_at_dest = engine.state.get_riders_at_position(destination)
+            own_riders = [r for r in riders_at_dest if r.player_id == player.player_id and r != move.rider]
+            score += len(own_riders) * 15
+
+            # Terrain matching bonus
+            score += self._score_terrain_matching_simple(move, engine)
+
+            scored_moves.append((score, move))
+
+        return max(scored_moves, key=lambda x: x[0])[1]
+
+    def _select_best_advancement_move(self, moves: List[Move], engine: GameEngine, player: Player) -> Move:
+        """Select best Pull/Attack move with terrain optimization"""
+        scored_moves = []
+
+        for move in moves:
+            score = 0.0
+
+            # Base score: actual movement after terrain limits
+            distance = self._get_rider_movement(move, move.rider, engine)
+            score += distance * 10
+
+            # Card efficiency penalty
+            cards_used = len(move.cards)
+            if cards_used > 0 and distance > 0:
+                efficiency = distance / cards_used
+                score += efficiency * 15
+            else:
+                score -= 50  # Penalize inefficient moves
+
+            # Terrain matching
+            score += self._score_terrain_matching_simple(move, engine)
+
+            # Positioning for future drafts
+            destination = min(move.rider.position + distance, engine.state.track_length - 1)
+            riders_at_dest = engine.state.get_riders_at_position(destination)
+            opponent_riders = [r for r in riders_at_dest if r.player_id != player.player_id]
+            score += len(opponent_riders) * 20  # Good for future drafting
+
+            scored_moves.append((score, move))
+
+        return max(scored_moves, key=lambda x: x[0])[1]
+
+    def _score_terrain_matching_simple(self, move: Move, engine: GameEngine) -> float:
+        """Simple terrain matching bonus"""
+        score = 0.0
+        rider_type = move.rider.rider_type
+        current_terrain = engine._get_terrain_at_position(move.rider.position)
+
+        # Bonus for good matches
+        if rider_type == CardType.CLIMBER and current_terrain == TerrainType.CLIMB:
+            score += 30
+        elif rider_type == CardType.SPRINTER and current_terrain in [TerrainType.FLAT, TerrainType.DESCENT]:
+            score += 25
+        elif rider_type == CardType.ROULEUR:
+            score += 10
+
+        # Penalty for terrain-limited riders
+        if (rider_type, current_terrain) in self.terrain_limits:
+            score -= 20
+
+        return score
+
+
+
 class ChatGPTAgent(Agent):
     """
     ChatGPT Bot: A balanced agent that values steady advancement, sprint points,
@@ -1455,6 +1751,7 @@ def create_agent(agent_type: str, player_id: int) -> Agent:
         'gemini': GeminiAgent,
         'chatgpt': ChatGPTAgent,
         'claudebot': ClaudeBotAgent,
+        'claudebot2': ClaudeBot2Agent,
         'tobibot': TobiBotAgent,
         'rouleur_focus': lambda pid: CardTypeAgent(pid, CardType.ROULEUR),
         'sprinter_focus': lambda pid: CardTypeAgent(pid, CardType.SPRINTER),
@@ -1472,7 +1769,7 @@ def get_available_agents() -> List[str]:
     return [
         'random', 'marc_soler', 'lead_rider', 'balanced',
         'sprint_hunter', 'conservative', 'aggressive', 'adaptive',
-        'wheelsucker', 'gemini', 'chatgpt', 'claudebot', 'tobibot',
+        'wheelsucker', 'gemini', 'chatgpt', 'claudebot', 'claudebot2', 'tobibot',
         'rouleur_focus', 'sprinter_focus', 'climber_focus'
     ]
 
