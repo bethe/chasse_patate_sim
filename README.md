@@ -19,7 +19,7 @@ This simulator allows you to:
 ├── game_state.py          # Core game state, cards, El Patron rule
 ├── game_engine.py         # Game rules, move validation, terrain limits
 ├── game_config.py         # Configuration system and CLI management
-├── agents.py              # AI agent implementations (15 types)
+├── agents.py              # AI agent implementations (8 types)
 ├── simulator.py           # Game simulation and logging
 ├── analysis.py            # Statistical analysis tools
 ├── play.py                # Interactive play mode
@@ -227,30 +227,24 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 
 ## Available AI Agents
 
-15 different AI agent types:
+8 AI agent types:
 
 | Agent          | Strategy                                      |
 |----------------|-----------------------------------------------|
 | random         | Plays randomly (baseline)                     |
-| greedy         | Maximizes total advancement                   |
-| lead_rider     | Focuses on advancing the leading rider        |
-| balanced       | Keeps all three riders advancing together     |
-| sprint_hunter  | Prioritizes sprint points                     |
-| conservative   | Plays cautiously                              |
-| aggressive     | Maximum advancement per move                  |
-| adaptive       | Adjusts strategy based on terrain             |
+| marc_soler     | Simple strategy using worst cards first       |
 | wheelsucker    | Prioritizes drafting opportunities            |
 | **gemini**     | Balanced scoring: advancement + points + efficiency |
 | **chatgpt**    | Balanced agent valuing steady advancement and card efficiency |
 | **claudebot**  | Multi-factor: terrain awareness, sprint targeting, card economy |
+| **claudebot2** | Enhanced multi-factor scoring with improved terrain awareness |
 | **tobibot**    | Prioritized strategy: scoring, hand management, efficient moves, grouping |
-| rouleur_focus  | Prefers playing Rouleur cards                 |
-| sprinter_focus | Prefers playing Sprinter cards                |
-| climber_focus  | Prefers playing Climber cards                 |
 
 ### Featured Agents
 
 **ClaudeBot** - Multi-factor scoring considering terrain-aware movement, sprint/finish targeting, card economy, drafting efficiency, and rider specialization.
+
+**ClaudeBot2** - Enhanced multi-factor scoring with improved terrain awareness and strategic depth.
 
 **GeminiBot** - Balanced scoring system weighing total advancement, sprint/finish points potential, card efficiency, checkpoint card drawing, and hand management.
 
@@ -276,7 +270,7 @@ result = sim.run_game(agents)
 
 # Run a tournament
 results = sim.run_tournament(
-    agent_types=['claudebot', 'gemini', 'wheelsucker', 'greedy'],
+    agent_types=['claudebot', 'gemini', 'wheelsucker', 'tobibot'],
     games_per_matchup=20
 )
 

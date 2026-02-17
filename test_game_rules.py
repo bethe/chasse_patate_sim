@@ -1643,7 +1643,7 @@ class TestTournamentPositionAlternation(unittest.TestCase):
         from run_tournament import run_multiplayer_tournament
 
         # Run with 3 agents, 12 games (divisible by 6 permutations)
-        agents = ['random', 'marc_soler', 'balanced']
+        agents = ['random', 'marc_soler', 'wheelsucker']
 
         df, _ = run_multiplayer_tournament(
             agent_types=agents,

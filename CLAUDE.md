@@ -67,7 +67,7 @@ python test_game_rules.py
 | `game_state.py` | Core data structures: cards, riders, players, board, El Patron rule |
 | `game_engine.py` | Game rules, move validation, terrain limits |
 | `game_config.py` | Configuration system, CLI management, presets |
-| `agents.py` | AI agent implementations (15 strategies) |
+| `agents.py` | AI agent implementations (8 strategies) |
 | `simulator.py` | Game execution, logging, batch runs, tournaments |
 | `analysis.py` | Statistical analysis and report generation |
 | `quick_test.py` | Fast balance testing script |
@@ -159,7 +159,7 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 
 ## Available Agents
 
-15 agent types: `random`, `marc_soler`, `lead_rider`, `balanced`, `sprint_hunter`, `conservative`, `aggressive`, `adaptive`, `wheelsucker`, `gemini`, `chatgpt`, `claudebot`, `tobibot`, `rouleur_focus`, `sprinter_focus`, `climber_focus`
+8 agent types: `random`, `marc_soler`, `wheelsucker`, `gemini`, `chatgpt`, `claudebot`, `claudebot2`, `tobibot`
 
 ### Featured Agents
 
@@ -169,6 +169,8 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 - Card economy and hand management
 - Drafting efficiency (free movement is valuable)
 - Rider specialization (right rider for right terrain)
+
+**ClaudeBot2** - Enhanced multi-factor scoring with improved terrain awareness and strategic depth.
 
 **Gemini** - Balanced scoring:
 - Total advancement (distance x riders)
