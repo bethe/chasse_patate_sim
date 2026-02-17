@@ -496,26 +496,11 @@ class GameEngine:
                 player.hand.append(new_card)
                 cards_drawn.append(new_card.card_type.value)
         
-        # Now choose which card to discard from the UPDATED hand
-        # Priority: Discard Energy cards first, then others
+        # Choose which card to discard from the UPDATED hand (after draw)
         card_to_discard = None
-        
-        # If agent specified a card type to discard via move.cards
-        if move.cards and len(move.cards) > 0:
-            # Agent pre-selected a card type - find a matching card in current hand
-            target_card_type = move.cards[0].card_type
-            matching_cards = [c for c in player.hand if c.card_type == target_card_type]
-            if matching_cards:
-                card_to_discard = matching_cards[0]
-        
-        # If no card specified or not found, use default strategy
-        if not card_to_discard and player.hand:
-            # Prefer Energy cards
-            energy_cards = [c for c in player.hand if c.is_energy_card()]
-            if energy_cards:
-                card_to_discard = energy_cards[0]
-            else:
-                card_to_discard = player.hand[0]
+        if player.hand:
+            from agents import choose_card_to_discard
+            card_to_discard = choose_card_to_discard(player, self)
         
         card_discarded = None
         if card_to_discard:
