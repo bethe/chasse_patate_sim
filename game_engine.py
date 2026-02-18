@@ -353,10 +353,11 @@ class GameEngine:
             if card not in player.hand:
                 return {'success': False, 'error': f'Card {card.card_type.value} not in hand'}
         
-        # Store old position and terrain
+        # Store old position, terrain, and hand size
         old_position = move.rider.position
         old_tile = self.state.get_tile_at_position(old_position)
         old_terrain = old_tile.terrain.value if old_tile else "Unknown"
+        hand_size_before = len(player.hand)
         
         # Calculate movement based on action type
         if move.action_type == ActionType.PULL:
@@ -442,9 +443,12 @@ class GameEngine:
             'cards_played': [c.card_type.value for c in move.cards],
             'num_cards': len(move.cards),
             'movement': total_movement,
+            'total_advancement': total_movement,
             'points_earned': points_earned,
             'checkpoints_reached': checkpoints_reached if checkpoints_reached else None,
-            'cards_drawn': cards_drawn
+            'cards_drawn': cards_drawn,
+            'hand_size_before': hand_size_before,
+            'hand_size_after': len(player.hand),
         }
         
         # Store this move for potential drafting
@@ -530,6 +534,7 @@ class GameEngine:
             'hand_size_after': hand_size_after,
             'num_cards': 0,
             'movement': 0,
+            'total_advancement': 0,
             'points_earned': 0,
             'checkpoints_reached': None
         }
@@ -540,6 +545,7 @@ class GameEngine:
         Each rider (lead and drafters) may have different terrain limits, so they
         may end up at different positions even though they're drafting together.
         """
+        hand_size_before = len(player.hand)
         # Calculate base pull movement for lead rider
         base_pull_movement = self._calculate_pull_movement(move.rider, move.cards)
 
@@ -652,12 +658,17 @@ class GameEngine:
             'cards_played': [c.card_type.value for c in move.cards],
             'num_cards': len(move.cards),
             'movement': pull_movement,
+            'total_advancement': (new_position - old_position) + sum(
+                d['new_position'] - d['old_position'] for d in drafting_results
+            ),
             'points_earned': points_earned,
             'drafting_riders': drafting_results,
             'checkpoints_reached': checkpoints_reached if checkpoints_reached else None,
-            'cards_drawn': cards_drawn
+            'cards_drawn': cards_drawn,
+            'hand_size_before': hand_size_before,
+            'hand_size_after': len(player.hand),
         }
-        
+
         # Store for potential drafting
         self.state.last_move = result
         return result
@@ -668,6 +679,7 @@ class GameEngine:
         Each rider may have different terrain limits, so they may end up at
         different positions even though they're drafting together.
         """
+        hand_size_before = len(player.hand)
         # Get base movement from last Pull/Draft/TeamPull/TeamDraft
         if not self.state.last_move or self.state.last_move.get('action') not in ['Pull', 'Draft', 'TeamPull', 'TeamDraft']:
             return {'success': False, 'error': 'Cannot draft - no valid move to follow'}
@@ -751,12 +763,17 @@ class GameEngine:
             'cards_played': [],
             'num_cards': 0,
             'movement': base_draft_movement,
+            'total_advancement': sum(
+                d['new_position'] - d['old_position'] for d in drafting_results
+            ),
             'points_earned': points_earned,
             'drafting_riders': drafting_results,
             'checkpoints_reached': checkpoints_reached if checkpoints_reached else None,
-            'cards_drawn': cards_drawn
+            'cards_drawn': cards_drawn,
+            'hand_size_before': hand_size_before,
+            'hand_size_after': len(player.hand),
         }
-        
+
         # Store for potential future drafting
         self.state.last_move = result
         return result

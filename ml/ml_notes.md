@@ -49,12 +49,13 @@ The network scores each valid move individually (state embedding + move features
 ## Reward Design
 
 - **Terminal**: `(my_score - best_opponent_score) / 30.0` — score differential, roughly [-1, 1]
-- **Intermediate** (per turn, small coefficient 0.01):
+- **Per-turn intermediate** (small coefficient 0.01):
   - Points scored this turn (sprint/finish crossing) / 30
-  - Movement bonus: `0.01 * (movement / track_length)`
-  - Card draw bonus: `0.01 * (cards_drawn / 10)`
+  - Total advancement bonus: `0.01 * (total_advancement / track_length)` — sum of all riders' actual movement in the move (accounts for terrain limits per rider)
+  - Hand size delta bonus: `0.01 * ((hand_after - hand_before) / 10)` — net cards gained/lost (rewards card draws, penalizes card spending)
+- **Per-round intermediate**: Same three components (points, total advancement, hand delta) aggregated across all RL agent turns in the round, added to the last transition of the round
 
-Intermediate rewards accelerate learning by providing turn-by-turn feedback instead of only at game end. They're kept small so they don't distort the main objective.
+Intermediate rewards accelerate learning by providing turn-by-turn and round-by-round feedback instead of only at game end. They're kept small so they don't distort the main objective.
 
 ## Training
 
@@ -90,14 +91,18 @@ python3 ml/train_ml_agent.py --iterations 500
 # Full curriculum (~2-3 hours)
 python3 ml/train_ml_agent.py
 
-# Resume training
-python3 ml/train_ml_agent.py --resume ml/ml_agent_checkpoint.pt --iterations 1000
+# Resume from a checkpoint (continues iteration numbering)
+python3 ml/train_ml_agent.py --resume ml/checkpoints/ml_agent_iter_500.pt --iterations 1000
 
-# Force a specific phase
-python3 ml/train_ml_agent.py --phase 1 --iterations 1000
+# Resume from specific checkpoint, force phase, extended training
+# Example: continue from iter 500, stay in phase 1 for 5000 more iterations
+# → saves checkpoints at iter 600, 700, ... 5400; final at iter 5500
+python3 ml/train_ml_agent.py --resume ml/checkpoints/ml_agent_iter_500.pt --phase 1 --iterations 5000
 ```
 
-Checkpoints save to `ml/checkpoints/` every 100 iterations. Final weights go to `ml/ml_agent_checkpoint.pt`.
+Resumable checkpoints (network + optimizer + iteration) save to `ml/checkpoints/` every 100 iterations and at the end of training. Inference weights (network only) save to `ml/ml_agent_checkpoint.pt` at the end of training — this is what `PPOAgent` loads.
+
+**Important:** Only `ml/checkpoints/*.pt` files can be used with `--resume`. The `ml/ml_agent_checkpoint.pt` file is weights-only and cannot be resumed from.
 
 ### Using the Trained Agent
 

@@ -72,13 +72,28 @@ def compute_step_reward(move_result: dict, track_length: int) -> float:
     r = 0.0
     # Points scored this turn (direct game signal)
     r += move_result.get('points_earned', 0) / 30.0
-    # Small movement bonus
-    movement = move_result.get('movement', 0)
-    r += SHAPING_COEF * (movement / max(track_length, 1))
-    # Checkpoint card draw bonus
-    cards_drawn = move_result.get('cards_drawn', 0)
-    if isinstance(cards_drawn, int):
-        r += SHAPING_COEF * (cards_drawn / 10.0)
+    # Total advancement bonus (all riders in the move)
+    total_adv = move_result.get('total_advancement', move_result.get('movement', 0))
+    r += SHAPING_COEF * (total_adv / max(track_length, 1))
+    # Hand size delta bonus (cards gained minus cards spent)
+    hand_before = move_result.get('hand_size_before', 0)
+    hand_after = move_result.get('hand_size_after', 0)
+    if hand_before or hand_after:
+        r += SHAPING_COEF * ((hand_after - hand_before) / 10.0)
+    return r
+
+
+def compute_round_reward(round_results: list, track_length: int) -> float:
+    """Per-round intermediate reward aggregating all turns in the round."""
+    r = 0.0
+    for move_result in round_results:
+        r += move_result.get('points_earned', 0) / 30.0
+        total_adv = move_result.get('total_advancement', move_result.get('movement', 0))
+        r += SHAPING_COEF * (total_adv / max(track_length, 1))
+        hand_before = move_result.get('hand_size_before', 0)
+        hand_after = move_result.get('hand_size_after', 0)
+        if hand_before or hand_after:
+            r += SHAPING_COEF * ((hand_after - hand_before) / 10.0)
     return r
 
 
@@ -131,6 +146,7 @@ def collect_trajectory(network: ChassePatatePolicyNetwork,
 
     while not state.game_over and state.current_round < max_rounds:
         state.start_new_round()
+        round_move_results: list = []  # RL agent's move results this round
 
         while True:
             turn_info = state.determine_next_turn()
@@ -165,6 +181,7 @@ def collect_trajectory(network: ChassePatatePolicyNetwork,
                 move_result = engine.execute_move(move)
 
                 step_reward = compute_step_reward(move_result, state.track_length)
+                round_move_results.append(move_result)
 
                 transitions.append(Transition(
                     state_vec=state_vec,
@@ -193,6 +210,20 @@ def collect_trajectory(network: ChassePatatePolicyNetwork,
 
             if state.check_game_over():
                 break
+
+        # Add per-round reward to the last RL transition this round
+        if round_move_results and transitions:
+            round_r = compute_round_reward(round_move_results, state.track_length)
+            last = transitions[-1]
+            transitions[-1] = Transition(
+                state_vec=last.state_vec,
+                move_feats=last.move_feats,
+                action_idx=last.action_idx,
+                log_prob=last.log_prob,
+                value=last.value,
+                reward=last.reward + round_r,
+                done=last.done,
+            )
 
     # Handle round-limit
     if not state.game_over:
@@ -515,18 +546,20 @@ def train(total_iterations: int = 2500,
                 'iteration': iteration,
             }, ckpt_path)
 
-    # Save final checkpoint as the default (in ml/ directory)
-    final_path = _ml_dir / 'ml_agent_checkpoint.pt'
+    # Save resumable checkpoint to checkpoints directory
+    final_iter = start_iter + total_iterations
+    ckpt_path = Path(checkpoint_dir) / f'ml_agent_iter_{final_iter}.pt'
     torch.save({
         'network': network.state_dict(),
         'optimizer': optimizer.state_dict(),
-        'iteration': start_iter + total_iterations,
-    }, final_path)
-    print(f"\nTraining complete. Final checkpoint saved to {final_path}")
+        'iteration': final_iter,
+    }, ckpt_path)
+    print(f"\nResumable checkpoint saved to {ckpt_path}")
 
-    # Also save just the weights for PPOAgent to load
-    torch.save(network.state_dict(), final_path)
-    print(f"Network weights saved to {final_path}")
+    # Save weights-only for PPOAgent inference
+    weights_path = _ml_dir / 'ml_agent_checkpoint.pt'
+    torch.save(network.state_dict(), weights_path)
+    print(f"Inference weights saved to {weights_path}")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
