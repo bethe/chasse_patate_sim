@@ -28,7 +28,11 @@ This simulator allows you to:
 ├── run_tournament.py      # Multi-player tournament runner (2/3/4 players)
 ├── test_game_rules.py     # Comprehensive unit tests (80+ tests)
 ├── config.json            # Game configuration file
-└── game_logs/             # Generated game logs (created automatically)
+├── game_logs/             # Generated game logs (created automatically)
+└── ml/                    # ML agent (PPO reinforcement learning)
+    ├── ml_agent.py        # PPOAgent class, neural network, encoders
+    ├── train_ml_agent.py  # Training loop and curriculum
+    └── ml_notes.md        # Architecture and training notes
 ```
 
 ## Quick Start
@@ -256,6 +260,26 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 5. When El Patron, position with opponent riders
 6. Maximize team advancement respecting terrain limits
 7. TeamCar if any isolated rider lacks good options
+
+## ML / Reinforcement Learning Agent
+
+In addition to the hand-crafted heuristic bots, there is a PPO (Proximal Policy Optimization) agent that learns to play by playing thousands of games against heuristic bots and itself.
+
+**Key design points:**
+- **State**: 580-dimensional vector encoding rider positions, full track terrain, per-rider lookahead, hand composition, scores, and opponent info.
+- **Move scoring**: The network scores each valid move individually (state embedding + 22-dim move features → scalar), then softmaxes over scores. This handles the variable action space (50–200+ moves per turn).
+- **Reward**: Terminal reward based on score differential vs. best opponent; small intermediate rewards for points scored, movement, and card draws.
+- **Curriculum**: 3-phase training — Phase 1 (vs TobiBot), Phase 2 (multi-player + self-play), Phase 3 (self-play only).
+
+```bash
+# Train (full curriculum, ~2-3 hours)
+python3 ml/train_ml_agent.py
+
+# Use the trained agent
+agent = create_agent('ppo', player_id=0)  # loads ml/ml_agent_checkpoint.pt
+```
+
+See [ml/ml_notes.md](ml/ml_notes.md) for full architecture details, hyperparameters, and training guidance.
 
 ## Simulation API
 

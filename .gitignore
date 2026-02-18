@@ -1,6 +1,9 @@
 # Game simulation logs
 game_logs/
 
+# ML checkpoints
+ml/checkpoints
+
 # Python cache files
 __pycache__/
 *.pyc
