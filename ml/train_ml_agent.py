@@ -84,17 +84,8 @@ def compute_step_reward(move_result: dict, track_length: int) -> float:
 
 
 def compute_round_reward(round_results: list, track_length: int) -> float:
-    """Per-round intermediate reward aggregating all turns in the round."""
-    r = 0.0
-    for move_result in round_results:
-        r += move_result.get('points_earned', 0) / 30.0
-        total_adv = move_result.get('total_advancement', move_result.get('movement', 0))
-        r += SHAPING_COEF * (total_adv / max(track_length, 1))
-        hand_before = move_result.get('hand_size_before', 0)
-        hand_after = move_result.get('hand_size_after', 0)
-        if hand_before or hand_after:
-            r += SHAPING_COEF * ((hand_after - hand_before) / 10.0)
-    return r
+    """Per-round intermediate reward (intentionally zero — step rewards cover this)."""
+    return 0.0
 
 
 # ── GAE ────────────────────────────────────────────────────────────────────────
@@ -257,13 +248,14 @@ def ppo_update(network: ChassePatatePolicyNetwork,
                optimizer: torch.optim.Optimizer,
                all_transitions: List[Transition],
                clip_epsilon: float = 0.2,
-               entropy_coef: float = 0.01,
+               entropy_coef: float = 0.03,
                value_loss_coef: float = 0.5,
                n_epochs: int = 4,
                max_grad_norm: float = 0.5,
                gamma: float = 0.99,
-               gae_lambda: float = 0.95) -> dict:
-    """Run PPO update over collected transitions."""
+               gae_lambda: float = 0.95,
+               minibatch_size: int = 64) -> dict:
+    """Run PPO update over collected transitions using minibatches."""
     if not all_transitions:
         return {'policy_loss': 0, 'value_loss': 0, 'entropy': 0}
 
@@ -283,37 +275,57 @@ def ppo_update(network: ChassePatatePolicyNetwork,
     total_value_loss = 0.0
     total_entropy = 0.0
     n_updates = 0
+    n_transitions = len(all_transitions)
 
     for _epoch in range(n_epochs):
-        indices = torch.randperm(len(all_transitions))
+        indices = torch.randperm(n_transitions)
 
-        for i in indices:
-            i = i.item()
-            t = all_transitions[i]
+        for batch_start in range(0, n_transitions, minibatch_size):
+            batch_idx = indices[batch_start:batch_start + minibatch_size]
 
-            logits, value_new = network(t.state_vec, t.move_feats)
-            dist = Categorical(logits=logits)
-            log_prob_new = dist.log_prob(torch.tensor(t.action_idx))
-            entropy = dist.entropy()
+            # Accumulate losses over the minibatch
+            batch_policy_loss = torch.tensor(0.0)
+            batch_value_loss = torch.tensor(0.0)
+            batch_entropy = torch.tensor(0.0)
 
-            ratio = torch.exp(log_prob_new - old_log_probs[i])
-            surr1 = ratio * adv_t[i]
-            surr2 = torch.clamp(ratio, 1 - clip_epsilon, 1 + clip_epsilon) * adv_t[i]
-            policy_loss = -torch.min(surr1, surr2)
+            for i in batch_idx:
+                i = i.item()
+                t = all_transitions[i]
 
-            value_loss = F.mse_loss(value_new, ret_t[i].unsqueeze(0)
-                                    if value_new.dim() > 0 else ret_t[i])
+                logits, value_new = network(t.state_vec, t.move_feats)
+                dist = Categorical(logits=logits)
+                log_prob_new = dist.log_prob(torch.tensor(t.action_idx))
+                entropy = dist.entropy()
 
-            loss = policy_loss + value_loss_coef * value_loss - entropy_coef * entropy
+                ratio = torch.exp(log_prob_new - old_log_probs[i])
+                surr1 = ratio * adv_t[i]
+                surr2 = torch.clamp(ratio, 1 - clip_epsilon, 1 + clip_epsilon) * adv_t[i]
+                policy_loss = -torch.min(surr1, surr2)
+
+                value_loss = F.mse_loss(value_new, ret_t[i].unsqueeze(0)
+                                        if value_new.dim() > 0 else ret_t[i])
+
+                batch_policy_loss = batch_policy_loss + policy_loss
+                batch_value_loss = batch_value_loss + value_loss
+                batch_entropy = batch_entropy + entropy
+
+            batch_size = len(batch_idx)
+            batch_policy_loss = batch_policy_loss / batch_size
+            batch_value_loss = batch_value_loss / batch_size
+            batch_entropy = batch_entropy / batch_size
+
+            loss = (batch_policy_loss
+                    + value_loss_coef * batch_value_loss
+                    - entropy_coef * batch_entropy)
 
             optimizer.zero_grad()
             loss.backward()
             nn.utils.clip_grad_norm_(network.parameters(), max_grad_norm)
             optimizer.step()
 
-            total_policy_loss += policy_loss.item()
-            total_value_loss += value_loss.item()
-            total_entropy += entropy.item()
+            total_policy_loss += batch_policy_loss.item()
+            total_value_loss += batch_value_loss.item()
+            total_entropy += batch_entropy.item()
             n_updates += 1
 
     n = max(n_updates, 1)
