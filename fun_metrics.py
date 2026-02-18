@@ -9,6 +9,11 @@ Metrics tracked per game:
   - Turns between 1st and 2nd rider finishing (race suspense).
   - Turns between 1st and 5th rider finishing (race suspense, full field).
   - Whether the player who won the first intermediate sprint also won the game.
+  - Total turns per game (avg / min / max).
+  - % of turns where TeamCar was used (avg / min / max).
+  - % of turns where movement == 0, i.e. no field advancement (avg / min / max).
+    Note: skipped turns (no valid moves at all) are not logged and not counted.
+  - % of turns using a drafting action: Draft, TeamPull, or TeamDraft (avg / min / max).
 
 Usage:
   python fun_metrics.py [log_dir]   # defaults to game_logs/
@@ -198,6 +203,18 @@ def compute_game_metrics(
     if len(finish_turns) >= 5:
         turns_1st_to_5th = finish_turns[4] - finish_turns[0]
 
+    # --- Game length and TeamCar usage ---
+    total_turns = final_result.get("total_turns") or len(move_history)
+    teamcar_count = sum(1 for t in move_history if t["move"].get("action") == "TeamCar")
+    teamcar_pct = teamcar_count / total_turns * 100 if total_turns else None
+
+    zero_adv_count = sum(1 for t in move_history if t["move"].get("movement", 0) == 0)
+    zero_adv_pct = zero_adv_count / total_turns * 100 if total_turns else None
+
+    _DRAFT_ACTIONS = {"Draft", "TeamPull", "TeamDraft"}
+    draft_count = sum(1 for t in move_history if t["move"].get("action") in _DRAFT_ACTIONS)
+    draft_pct = draft_count / total_turns * 100 if total_turns else None
+
     # --- First sprint winner also won the game? ---
     first_sprint_winner_won: Optional[bool] = None
     if first_sprint_pos is not None:
@@ -220,8 +237,11 @@ def compute_game_metrics(
         "turns_1st_to_2nd_finish": turns_1st_to_2nd,
         "turns_1st_to_5th_finish": turns_1st_to_5th,
         "first_sprint_winner_won": first_sprint_winner_won,
+        "total_turns": total_turns,
+        "teamcar_pct": teamcar_pct,
+        "zero_adv_pct": zero_adv_pct,
+        "draft_pct": draft_pct,
         # Contextual info
-        "total_turns": final_result.get("total_turns"),
         "total_rounds": final_result.get("total_rounds"),
         "game_over_reason": final_result.get("game_over_reason", ""),
         "riders_finished": len(finish_order),
@@ -262,9 +282,29 @@ def aggregate_metrics(metrics_list: List[dict]) -> dict:
     t12 = field("turns_1st_to_2nd_finish")
     t15 = field("turns_1st_to_5th_finish")
     sprint_won = field("first_sprint_winner_won")
+    total_turns = field("total_turns")
+    teamcar_pct = field("teamcar_pct")
+    zero_adv_pct = field("zero_adv_pct")
+    draft_pct = field("draft_pct")
 
     return {
         "num_games": n,
+        # Game length
+        "avg_total_turns": _avg(total_turns),
+        "min_total_turns": min((v for v in total_turns if v is not None), default=None),
+        "max_total_turns": max((v for v in total_turns if v is not None), default=None),
+        # TeamCar usage
+        "avg_teamcar_pct": _avg(teamcar_pct),
+        "min_teamcar_pct": min((v for v in teamcar_pct if v is not None), default=None),
+        "max_teamcar_pct": max((v for v in teamcar_pct if v is not None), default=None),
+        # Zero-advancement turns
+        "avg_zero_adv_pct": _avg(zero_adv_pct),
+        "min_zero_adv_pct": min((v for v in zero_adv_pct if v is not None), default=None),
+        "max_zero_adv_pct": max((v for v in zero_adv_pct if v is not None), default=None),
+        # Draft / TeamPull / TeamDraft turns
+        "avg_draft_pct": _avg(draft_pct),
+        "min_draft_pct": min((v for v in draft_pct if v is not None), default=None),
+        "max_draft_pct": max((v for v in draft_pct if v is not None), default=None),
         # Lead changes
         "avg_lead_changes": _avg(lead_changes),
         "min_lead_changes": min(lead_changes),
@@ -305,6 +345,31 @@ def print_fun_report(metrics_list: List[dict]) -> None:
     print("  FUN METRICS REPORT")
     print("=" * 62)
     print(f"  Games analyzed: {n}")
+    print()
+
+    # Game length
+    print("GAME LENGTH (turns)")
+    print(f"  Average : {agg['avg_total_turns']:.1f}")
+    print(f"  Range   : {agg['min_total_turns']} – {agg['max_total_turns']}")
+    print()
+
+    # TeamCar usage
+    print("TEAMCAR USAGE (% of turns)")
+    print(f"  Average : {agg['avg_teamcar_pct']:.1f}%")
+    print(f"  Range   : {agg['min_teamcar_pct']:.1f}% – {agg['max_teamcar_pct']:.1f}%")
+    print()
+
+    # Zero-advancement turns
+    print("ZERO-ADVANCEMENT TURNS (movement == 0, % of turns)")
+    print(f"  Average : {agg['avg_zero_adv_pct']:.1f}%")
+    print(f"  Range   : {agg['min_zero_adv_pct']:.1f}% – {agg['max_zero_adv_pct']:.1f}%")
+    print(f"  Note: nearly all zero-adv turns are TeamCar; any remainder are truly stuck moves")
+    print()
+
+    # Draft family
+    print("DRAFT-FAMILY TURNS (Draft + TeamPull + TeamDraft, % of turns)")
+    print(f"  Average : {agg['avg_draft_pct']:.1f}%")
+    print(f"  Range   : {agg['min_draft_pct']:.1f}% – {agg['max_draft_pct']:.1f}%")
     print()
 
     # Lead changes
@@ -355,8 +420,9 @@ def print_fun_report(metrics_list: List[dict]) -> None:
     if n <= 20:
         print()
         print("PER-GAME BREAKDOWN")
-        header = (f"{'Game':>5}  {'Players':>7}  {'Leads':>5}  "
-                  f"{'Gap12':>5}  {'Gap1L':>5}  "
+        header = (f"{'Game':>5}  {'Players':>7}  {'Turns':>5}  {'TC%':>5}  "
+                  f"{'0Adv%':>5}  {'Dft%':>5}  "
+                  f"{'Leads':>5}  {'Gap12':>5}  {'Gap1L':>5}  "
                   f"{'T→2nd':>5}  {'T→5th':>5}  {'Sprint→Win':>10}")
         print(header)
         print("-" * len(header))
@@ -367,8 +433,12 @@ def print_fun_report(metrics_list: List[dict]) -> None:
             t2 = str(m["turns_1st_to_2nd_finish"]) if m["turns_1st_to_2nd_finish"] is not None else "N/A"
             t5 = str(m["turns_1st_to_5th_finish"]) if m["turns_1st_to_5th_finish"] is not None else "N/A"
             g12 = str(m["gap_1st_2nd"]) if m["gap_1st_2nd"] is not None else "N/A"
-            print(f"{m['game_id']:>5}  {m['num_players']:>7}  {m['lead_changes']:>5}  "
-                  f"{g12:>5}  {m['gap_1st_last']:>5}  "
+            tc = f"{m['teamcar_pct']:.1f}" if m["teamcar_pct"] is not None else "N/A"
+            za = f"{m['zero_adv_pct']:.1f}" if m["zero_adv_pct"] is not None else "N/A"
+            dp = f"{m['draft_pct']:.1f}" if m["draft_pct"] is not None else "N/A"
+            print(f"{m['game_id']:>5}  {m['num_players']:>7}  {m['total_turns']:>5}  {tc:>5}  "
+                  f"{za:>5}  {dp:>5}  "
+                  f"{m['lead_changes']:>5}  {g12:>5}  {m['gap_1st_last']:>5}  "
                   f"{t2:>5}  {t5:>5}  {sprint_str:>10}")
         print()
 
@@ -391,18 +461,30 @@ def load_game_logs(log_dir: str = "game_logs") -> List[dict]:
 
 
 def analyze_logs(
-    log_dir: str = "game_logs",
+    path: str = "game_logs",
     config_path: str = "config.json",
 ) -> List[dict]:
     """
-    Load game logs from log_dir, compute fun metrics for each, and return
-    the list of per-game metric dicts.
+    Load game logs and compute fun metrics for each.
+
+    path can be:
+      - a directory  → loads all game_*.json files inside it
+      - a .json file → loads just that one file
     """
     finish_pos, first_sprint_pos = _load_track_info(config_path)
-    logs = load_game_logs(log_dir)
+
+    if os.path.isfile(path):
+        try:
+            with open(path) as f:
+                logs = [json.load(f)]
+        except Exception as e:
+            print(f"Error: could not load '{path}': {e}", file=sys.stderr)
+            return []
+    else:
+        logs = load_game_logs(path)
 
     if not logs:
-        print(f"No game logs found in '{log_dir}/'", file=sys.stderr)
+        print(f"No game logs found at '{path}'", file=sys.stderr)
         return []
 
     metrics_list = []
@@ -425,9 +507,9 @@ def analyze_logs(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    log_dir = sys.argv[1] if len(sys.argv) > 1 else "game_logs"
+    path = sys.argv[1] if len(sys.argv) > 1 else "game_logs"
     config_path = sys.argv[2] if len(sys.argv) > 2 else "config.json"
 
-    metrics = analyze_logs(log_dir, config_path)
+    metrics = analyze_logs(path, config_path)
     if metrics:
         print_fun_report(metrics)

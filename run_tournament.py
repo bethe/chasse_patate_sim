@@ -65,8 +65,8 @@ def run_multiplayer_tournament(agent_types, games_per_combination=10):
     all_results = []
     total_games = 0
 
-    # Run tournaments for 2, 3, and 4 players
-    for num_players in [2, 3, 4]:
+    # Run tournaments for 3 and 4 players
+    for num_players in [3, 4]:
         print(f"\n{'='*80}")
         print(f"{num_players}-PLAYER GAMES")
         print(f"{'='*80}")
@@ -483,7 +483,7 @@ def print_summary(df, agent_types):
 
 if __name__ == "__main__":
     # Define agents for tournament
-    agents = ['chatgpt', 'gemini', 'claudebot', 'tobibot', 'claudebot2']
+    agents = ['tobibot', 'claudebot2', 'tobibot', 'claudebot2']
 
     print("\nStarting comprehensive tournament...")
     print(f"This will run approximately 250 games (may take 10-20 minutes)\n")
