@@ -53,26 +53,28 @@ The network scores each valid move individually (state embedding + move features
   - Points scored this turn (sprint/finish crossing) / 30
   - Total advancement bonus: `0.01 * (total_advancement / track_length)` — sum of all riders' actual movement in the move (accounts for terrain limits per rider)
   - Hand size delta bonus: `0.01 * ((hand_after - hand_before) / 10)` — net cards gained/lost (rewards card draws, penalizes card spending)
-- **Per-round intermediate**: Same three components (points, total advancement, hand delta) aggregated across all RL agent turns in the round, added to the last transition of the round
+- **Per-round intermediate**: Disabled (returns 0). Previously duplicated the per-turn signals, causing double-counting on the last transition of each round.
 
-Intermediate rewards accelerate learning by providing turn-by-turn and round-by-round feedback instead of only at game end. They're kept small so they don't distort the main objective.
+Intermediate rewards accelerate learning by providing turn-by-turn feedback instead of only at game end. They're kept small so they don't distort the main objective.
 
 ## Training
 
 ### PPO Hyperparameters
 
 - clip_epsilon=0.2, gamma=0.99, gae_lambda=0.95
-- lr=3e-4 (Adam), entropy_coef=0.01, value_loss_coef=0.5
-- 16 games per update, 4 PPO epochs per batch
+- lr=3e-4 (Adam), entropy_coef=0.03, value_loss_coef=0.5
+- 16 games per update, 4 PPO epochs per batch, minibatch_size=64
 - max_grad_norm=0.5
 
 ### 3-Phase Curriculum
 
-| Phase | Iterations | Setup | Why |
+| Phase | Default Iterations | Setup | Why |
 |---|---|---|---|
-| 1 | 0-500 | 2-player: PPO vs TobiBot | Learn basics from strong heuristic bot |
-| 2 | 500-1500 | 3-player: PPO vs TobiBot + self-play copy | Multi-player dynamics, push beyond heuristic ceiling |
+| 1 | 0–500 | 2-player: PPO vs TobiBot | Learn basics from strong heuristic bot |
+| 2 | 500–1500 | 3-player: PPO vs TobiBot + self-play copy | Multi-player dynamics, push beyond heuristic ceiling |
 | 3 | 1500+ | Mix of 2p and 3p self-play | Discover novel strategies |
+
+Phase boundaries are configurable via `--phase1-end` and `--phase2-end` CLI args.
 
 ### When to Transition to Self-Play
 
@@ -91,13 +93,17 @@ python3 ml/train_ml_agent.py --iterations 500
 # Full curriculum (~2-3 hours)
 python3 ml/train_ml_agent.py
 
+# Extended phase 1 (1000 iters), then phase 2 until 2000, then phase 3
+python3 ml/train_ml_agent.py --phase1-end 1000 --phase2-end 2000
+
 # Resume from a checkpoint (continues iteration numbering)
 python3 ml/train_ml_agent.py --resume ml/checkpoints/ml_agent_iter_500.pt --iterations 1000
 
 # Resume from specific checkpoint, force phase, extended training
-# Example: continue from iter 500, stay in phase 1 for 5000 more iterations
-# → saves checkpoints at iter 600, 700, ... 5400; final at iter 5500
 python3 ml/train_ml_agent.py --resume ml/checkpoints/ml_agent_iter_500.pt --phase 1 --iterations 5000
+
+# Resume with custom phase boundaries
+python3 ml/train_ml_agent.py --resume ml/checkpoints/ml_agent_iter_400.pt --phase1-end 1000 --phase2-end 2000
 ```
 
 Resumable checkpoints (network + optimizer + iteration) save to `ml/checkpoints/` every 100 iterations and at the end of training. Inference weights (network only) save to `ml/ml_agent_checkpoint.pt` at the end of training — this is what `PPOAgent` loads.

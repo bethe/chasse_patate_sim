@@ -418,14 +418,16 @@ def evaluate(network: ChassePatatePolicyNetwork,
 
 def get_opponents_for_phase(phase: int, iteration: int,
                             old_network: Optional[ChassePatatePolicyNetwork],
-                            num_players_out: list) -> List[Agent]:
+                            num_players_out: list,
+                            phase1_end: int = 500,
+                            phase2_end: int = 1500) -> List[Agent]:
     """Return opponent agents and set num_players for current phase/iteration."""
-    if phase == 1 or (phase == 0 and iteration < 500):
+    if phase == 1 or (phase == 0 and iteration < phase1_end):
         # Phase 1: 2-player, PPO vs TobiBot
         num_players_out.append(2)
         return [create_agent('tobibot', 1)]
 
-    elif phase == 2 or (phase == 0 and iteration < 1500):
+    elif phase == 2 or (phase == 0 and iteration < phase2_end):
         # Phase 2: 3-player, PPO vs TobiBot + self-play copy
         num_players_out.append(3)
         opponents = [create_agent('tobibot', 1)]
@@ -466,7 +468,9 @@ def train(total_iterations: int = 2500,
           checkpoint_dir: str = None,
           eval_interval: int = 50,
           save_interval: int = 100,
-          lr: float = 3e-4):
+          lr: float = 3e-4,
+          phase1_end: int = 500,
+          phase2_end: int = 1500):
     """Main PPO training loop with 3-phase curriculum."""
     _ml_dir = Path(__file__).resolve().parent
     if checkpoint_dir is None:
@@ -509,7 +513,8 @@ def train(total_iterations: int = 2500,
         for game_num in range(games_per_update):
             num_players_list: list = []
             opponents = get_opponents_for_phase(
-                phase, iteration, old_network, num_players_list
+                phase, iteration, old_network, num_players_list,
+                phase1_end=phase1_end, phase2_end=phase2_end
             )
             num_players = num_players_list[0]
 
@@ -527,7 +532,7 @@ def train(total_iterations: int = 2500,
         elapsed = time.time() - t0
 
         avg_reward = sum(game_rewards) / max(len(game_rewards), 1)
-        current_phase = 1 if iteration < 500 else (2 if iteration < 1500 else 3)
+        current_phase = 1 if iteration < phase1_end else (2 if iteration < phase2_end else 3)
 
         print(f"[Iter {iteration:5d}] phase={current_phase} "
               f"transitions={len(all_transitions):5d} "
@@ -592,6 +597,10 @@ def main():
                         help='Save checkpoint every N iterations (default: 100)')
     parser.add_argument('--lr', type=float, default=3e-4,
                         help='Learning rate (default: 3e-4)')
+    parser.add_argument('--phase1-end', type=int, default=500,
+                        help='Iteration where phase 1 ends (default: 500)')
+    parser.add_argument('--phase2-end', type=int, default=1500,
+                        help='Iteration where phase 2 ends (default: 1500)')
     args = parser.parse_args()
 
     train(
@@ -602,6 +611,8 @@ def main():
         eval_interval=args.eval_interval,
         save_interval=args.save_interval,
         lr=args.lr,
+        phase1_end=args.phase1_end,
+        phase2_end=args.phase2_end,
     )
 
 
