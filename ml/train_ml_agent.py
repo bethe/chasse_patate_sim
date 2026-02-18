@@ -545,7 +545,7 @@ def train(total_iterations: int = 2500,
         # Evaluation
         if iteration % eval_interval == 0:
             network.eval()
-            eval_result = evaluate(network, 'tobibot', n_games=20)
+            eval_result = evaluate(network, 'tobibot', n_games=100)
             print(f"  ► EVAL vs TobiBot: win_rate={eval_result['win_rate']:.1%} "
                   f"avg_score_diff={eval_result['avg_score_diff']:+.1f}")
 
