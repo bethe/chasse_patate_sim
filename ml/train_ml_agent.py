@@ -68,14 +68,11 @@ def compute_terminal_reward(my_score: int, opponent_scores: List[int]) -> float:
 
 
 def compute_step_reward(move_result: dict, track_length: int) -> float:
-    """Small intermediate reward for forward progress and scoring."""
+    """Per-step reward: points, advancement, and hand delta for this turn."""
     r = 0.0
-    # Points scored this turn (direct game signal)
     r += move_result.get('points_earned', 0) / 30.0
-    # Total advancement bonus (all riders in the move)
     total_adv = move_result.get('total_advancement', move_result.get('movement', 0))
     r += SHAPING_COEF * (total_adv / max(track_length, 1))
-    # Hand size delta bonus (cards gained minus cards spent)
     hand_before = move_result.get('hand_size_before', 0)
     hand_after = move_result.get('hand_size_after', 0)
     if hand_before or hand_after:
@@ -84,8 +81,22 @@ def compute_step_reward(move_result: dict, track_length: int) -> float:
 
 
 def compute_round_reward(round_results: list, track_length: int) -> float:
-    """Per-round intermediate reward (intentionally zero — step rewards cover this)."""
-    return 0.0
+    """Per-round reward: cumulative points, advancement, and hand delta across all turns."""
+    r = 0.0
+    total_adv = 0
+    total_points = 0
+    hand_delta = 0
+    for move_result in round_results:
+        total_points += move_result.get('points_earned', 0)
+        total_adv += move_result.get('total_advancement', move_result.get('movement', 0))
+        hand_before = move_result.get('hand_size_before', 0)
+        hand_after = move_result.get('hand_size_after', 0)
+        if hand_before or hand_after:
+            hand_delta += (hand_after - hand_before)
+    r += total_points / 30.0
+    r += SHAPING_COEF * (total_adv / max(track_length, 1))
+    r += SHAPING_COEF * (hand_delta / 10.0)
+    return r
 
 
 # ── GAE ────────────────────────────────────────────────────────────────────────

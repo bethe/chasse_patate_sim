@@ -49,13 +49,16 @@ The network scores each valid move individually (state embedding + move features
 ## Reward Design
 
 - **Terminal**: `(my_score - best_opponent_score) / 30.0` — score differential, roughly [-1, 1]
-- **Per-turn intermediate** (small coefficient 0.01):
-  - Points scored this turn (sprint/finish crossing) / 30
-  - Total advancement bonus: `0.01 * (total_advancement / track_length)` — sum of all riders' actual movement in the move (accounts for terrain limits per rider)
-  - Hand size delta bonus: `0.01 * ((hand_after - hand_before) / 10)` — net cards gained/lost (rewards card draws, penalizes card spending)
-- **Per-round intermediate**: Disabled (returns 0). Previously duplicated the per-turn signals, causing double-counting on the last transition of each round.
+- **Per-step** (applied to each transition):
+  - Points scored this turn / 30
+  - Advancement bonus: `0.01 * (total_advancement / track_length)`
+  - Hand delta bonus: `0.01 * ((hand_after - hand_before) / 10)`
+- **Per-round** (added to last transition of each round):
+  - Cumulative points across all turns / 30
+  - Cumulative advancement: `0.01 * (total_advancement / track_length)`
+  - Cumulative hand delta: `0.01 * (hand_delta / 10)`
 
-Intermediate rewards accelerate learning by providing turn-by-turn feedback instead of only at game end. They're kept small so they don't distort the main objective.
+Both levels are intentional: per-step rewards good individual moves, per-round rewards good round-level resource allocation (e.g. sacrificing one rider's advancement to save cards for a more impactful move elsewhere).
 
 ## Training
 
