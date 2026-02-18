@@ -23,6 +23,7 @@ from game_state import (
     Rider, Player, ActionType
 )
 from game_engine import GameEngine, Move, TERRAIN_LIMITS
+from game_config import GameConfig, set_config
 
 
 class TestTerrainLimits(unittest.TestCase):
@@ -1642,7 +1643,7 @@ class TestTournamentPositionAlternation(unittest.TestCase):
         from run_tournament import run_multiplayer_tournament
 
         # Run with 3 agents, 12 games (divisible by 6 permutations)
-        agents = ['random', 'marc_soler', 'balanced']
+        agents = ['random', 'marc_soler', 'wheelsucker']
 
         df, _ = run_multiplayer_tournament(
             agent_types=agents,
@@ -1731,5 +1732,18 @@ class TestTournamentPositionAlternation(unittest.TestCase):
         self.assertIn('2p_pos1', analysis['overall'])
 
 
+class TestAgentWastefulMoves(unittest.TestCase):
+    """Test that agents never choose moves that cost cards but have 0 advancement"""
+
+    def test_no_wasteful_moves(self):
+        """All agents should avoid choosing moves that cost cards but result in 0 advancement"""
+        from agents import verify_no_wasteful_moves
+
+        result = verify_no_wasteful_moves()
+        self.assertTrue(result, "Some agents chose wasteful moves (cost cards but 0 advancement)")
+
+
 if __name__ == '__main__':
+    # Reset to default config so tests aren't affected by config.json
+    set_config(GameConfig())
     unittest.main()

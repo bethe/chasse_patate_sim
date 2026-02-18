@@ -65,7 +65,7 @@ def calculate_total_advancement(engine: GameEngine, move: Move) -> int:
 
 def should_use_team_car(player: Player, valid_moves: List[Move], hand_threshold: int = 3) -> bool:
     """Helper function to determine if agent should use Team Car
-    
+
     TeamCar is used only if:
     1. Hand size < threshold (default 3)
     2. No Draft or TeamDraft moves available
@@ -73,12 +73,59 @@ def should_use_team_car(player: Player, valid_moves: List[Move], hand_threshold:
     # Check hand size
     if len(player.hand) >= hand_threshold:
         return False
-    
+
     # Check if Draft or TeamDraft moves are available
     has_draft = any(m.action_type in [ActionType.DRAFT, ActionType.TEAM_DRAFT] for m in valid_moves)
-    
+
     # Only use TeamCar if no draft moves available
     return not has_draft
+
+
+def filter_wasteful_moves(moves: List[Move], engine: GameEngine) -> List[Move]:
+    """Filter out moves that cost cards but have 0 advancement
+
+    Returns moves that either:
+    - Have advancement > 0, OR
+    - Are free (Draft, TeamDraft, TeamCar)
+
+    If all paid moves have 0 advancement, returns only free moves.
+    If no moves pass the filter, returns original list as last resort.
+
+    Args:
+        moves: List of moves to filter
+        engine: Game engine for calculating advancement
+
+    Returns:
+        Filtered list of moves (preferring productive > free > wasteful)
+    """
+    productive_moves = []  # Moves with advancement > 0
+    free_moves = []  # Draft, TeamDraft, TeamCar
+    wasteful_moves = []  # Moves costing cards with 0 advancement
+
+    for move in moves:
+        # Categorize each move
+        if move.action_type in [ActionType.DRAFT, ActionType.TEAM_DRAFT, ActionType.TEAM_CAR]:
+            free_moves.append(move)
+        elif len(move.cards) > 0:
+            advancement = calculate_total_advancement(engine, move)
+            if advancement > 0:
+                productive_moves.append(move)
+            else:
+                wasteful_moves.append(move)
+        else:
+            # Shouldn't happen, but treat as free
+            free_moves.append(move)
+
+    # Return productive moves if available
+    if productive_moves:
+        return productive_moves
+
+    # Otherwise return free moves if available (better than wasteful)
+    if free_moves:
+        return free_moves
+
+    # Last resort: return original moves (all are wasteful or empty)
+    return moves
 
 
 def get_best_draft_move(valid_moves: List[Move]) -> Optional[Move]:
@@ -101,20 +148,73 @@ def get_best_draft_move(valid_moves: List[Move]) -> Optional[Move]:
     return None
 
 
-def choose_card_to_discard(player: Player) -> Optional[Card]:
-    """Helper function to choose worst card to discard (Energy first)
-    Note: This should be called BEFORE drawing in TeamCar, to pre-select the card type.
-    After drawing, the actual card instance will be selected during execution."""
+def choose_card_to_discard(player: Player, engine: 'GameEngine' = None) -> Optional[Card]:
+    """Choose the best card to discard for TeamCar.
+
+    Priority:
+    1. Discard cards of riders already at the finish (useless)
+    2. Discard the card type most present in hand (seek balance)
+    3. Tie-break: discard the card least valuable to its rider on current terrain
+    4. Final tie-break: random
+    """
     if not player.hand:
-        # If hand is empty, we'll discard an Energy after drawing
-        # Return None for now, execution will handle it
         return None
-    # Prefer discarding Energy cards
-    energy_cards = [c for c in player.hand if c.is_energy_card()]
-    if energy_cards:
-        return energy_cards[0]
-    # Otherwise discard first card
-    return player.hand[0]
+
+    # Without engine context, just discard the most common card type
+    if not engine:
+        counts = {}
+        for card in player.hand:
+            counts[card.card_type] = counts.get(card.card_type, 0) + 1
+        most_common = max(counts, key=counts.get)
+        return next(c for c in player.hand if c.card_type == most_common)
+
+    finish_pos = engine.state.track_length - 1
+    finished_rider_types = set()
+    unfinished_riders = []
+    for rider in player.riders:
+        if rider.position >= finish_pos:
+            finished_rider_types.add(rider.rider_type)
+        else:
+            unfinished_riders.append(rider)
+
+    # (1) Discard cards of finished riders first
+    finished_cards = [c for c in player.hand if c.card_type in finished_rider_types]
+    if finished_cards:
+        return finished_cards[0]
+
+    # Remaining cards are all potentially useful — group by type
+    counts = {}
+    for card in player.hand:
+        counts[card.card_type] = counts.get(card.card_type, 0) + 1
+
+    # (2) Find the card type(s) most present in hand
+    max_count = max(counts.values())
+    most_common_types = [ct for ct, n in counts.items() if n == max_count]
+
+    if len(most_common_types) == 1:
+        return next(c for c in player.hand if c.card_type == most_common_types[0])
+
+    # (3) Tie-break: least valuable to unfinished riders on their current terrain
+    # For each tied card type, compute its max pull value across unfinished riders
+    type_values = {}
+    for card_type in most_common_types:
+        best_val = 0
+        sample_card = next(c for c in player.hand if c.card_type == card_type)
+        for rider in unfinished_riders:
+            # A rider card can only be played by its matching rider (or Energy by any)
+            if sample_card.is_energy_card() or card_type == rider.rider_type:
+                tile = engine.state.get_tile_at_position(rider.position)
+                if tile:
+                    val = sample_card.get_movement(tile.terrain, PlayMode.PULL)
+                    best_val = max(best_val, val)
+        type_values[card_type] = best_val
+
+    min_value = min(type_values.values())
+    least_valuable = [ct for ct, v in type_values.items() if v == min_value]
+
+    # (4) Final tie-break: random
+    chosen_type = random.choice(least_valuable)
+    return next(c for c in player.hand if c.card_type == chosen_type)
 
 
 class Agent(ABC):
@@ -151,6 +251,8 @@ class RandomAgent(Agent):
         valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
+        # Filter out wasteful moves (cost cards but 0 advancement)
+        valid_moves = filter_wasteful_moves(valid_moves, engine)
         return random.choice(valid_moves)
 
 
@@ -177,275 +279,22 @@ class MarcSolerAgent(Agent):
             if should_use_team_car(player, valid_moves):
                 team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
                 if team_car_moves:
-                    worst_card = choose_card_to_discard(player)
-                    if worst_card:
-                        team_car_moves[0].cards = [worst_card]
                     return team_car_moves[0]
-        
+
         # Calculate total advancement for all moves and choose maximum
         # This considers both distance and number of riders moved
-        non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
+        # Filter out moves that cost cards but have 0 advancement (includes TeamCar as fallback)
+        filtered_moves = filter_wasteful_moves(valid_moves, engine)
+
+        # Prefer non-TeamCar moves if available
+        non_team_car = [m for m in filtered_moves if m.action_type != ActionType.TEAM_CAR]
         if non_team_car:
             return max(non_team_car, key=lambda m: calculate_total_advancement(engine, m))
+
+        # Fallback to TeamCar or any move
+        if filtered_moves:
+            return filtered_moves[0]
         return valid_moves[0]
-
-
-class LeadRiderAgent(Agent):
-    """Agent that focuses on advancing the leading rider"""
-
-    def __init__(self, player_id: int):
-        super().__init__(player_id, "LeadRider")
-
-    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
-        """Advance the leading rider, prioritizing drafts over TeamCar when low on cards"""
-        valid_moves = engine.get_valid_moves(player, eligible_riders)
-        if not valid_moves:
-            return None
-        
-        # If hand is low (< 3 cards), try Draft/TeamDraft first, then TeamCar
-        if len(player.hand) < 3:
-            # Check for draft moves
-            draft_move = get_best_draft_move(valid_moves)
-            if draft_move:
-                return draft_move
-            
-            # No draft available, use TeamCar
-            if should_use_team_car(player, valid_moves):
-                team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
-                if team_car_moves:
-                    worst_card = choose_card_to_discard(player)
-                    if worst_card:
-                        team_car_moves[0].cards = [worst_card]
-                    return team_car_moves[0]
-        
-        # Find our leading rider
-        lead_rider = max(player.riders, key=lambda r: r.position)
-        
-        # Filter moves for lead rider
-        lead_moves = [m for m in valid_moves if m.rider == lead_rider and m.action_type != ActionType.TEAM_CAR]
-        if not lead_moves:
-            # If no moves for lead rider, pick best overall
-            non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
-            if non_team_car:
-                return max(non_team_car, key=lambda m: calculate_move_distance(engine, m))
-            # If only TeamCar moves are available, use one
-            team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
-            return team_car_moves[0] if team_car_moves else None
-
-        # Pick move that advances lead rider most
-        return max(lead_moves, key=lambda m: calculate_move_distance(engine, m))
-
-
-class BalancedAgent(Agent):
-    """Agent that tries to keep all three riders advancing together"""
-
-    def __init__(self, player_id: int):
-        super().__init__(player_id, "Balanced")
-
-    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
-        """Move the most behind rider, prioritizing drafts over TeamCar when low on cards"""
-        valid_moves = engine.get_valid_moves(player, eligible_riders)
-        if not valid_moves:
-            return None
-        
-        # If hand is low (< 3 cards), try Draft/TeamDraft first, then TeamCar
-        if len(player.hand) < 3:
-            # Check for draft moves
-            draft_move = get_best_draft_move(valid_moves)
-            if draft_move:
-                return draft_move
-            
-            # No draft available, use TeamCar
-            if should_use_team_car(player, valid_moves):
-                team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
-                if team_car_moves:
-                    worst_card = choose_card_to_discard(player)
-                    if worst_card:
-                        team_car_moves[0].cards = [worst_card]
-                    return team_car_moves[0]
-        
-        # Find our most behind rider
-        behind_rider = min(player.riders, key=lambda r: r.position)
-        
-        # Filter moves for behind rider (excluding TeamCar)
-        behind_moves = [m for m in valid_moves if m.rider == behind_rider and m.action_type != ActionType.TEAM_CAR]
-        if behind_moves:
-            return max(behind_moves, key=lambda m: calculate_move_distance(engine, m))
-
-        # If no moves for behind rider, take best move overall
-        non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
-        if non_team_car:
-            return max(non_team_car, key=lambda m: calculate_move_distance(engine, m))
-
-        # Fallback to any available move
-        return valid_moves[0]
-
-
-class SprintHunterAgent(Agent):
-    """Agent that prioritizes sprint points"""
-
-    def __init__(self, player_id: int):
-        super().__init__(player_id, "SprintHunter")
-
-    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
-        """Prioritize reaching sprint points"""
-        valid_moves = engine.get_valid_moves(player, eligible_riders)
-        if not valid_moves:
-            return None
-        
-        # Find moves that land on sprint tiles
-        sprint_moves = []
-        for move in valid_moves:
-            distance = calculate_move_distance(engine, move)
-            target_pos = move.rider.position + distance
-            tile = engine.state.get_tile_at_position(target_pos)
-            if tile and tile.terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
-                sprint_moves.append(move)
-        
-        # If we can reach a sprint, prioritize those moves
-        if sprint_moves:
-            # Choose the sprint move that gets us furthest
-            return max(sprint_moves, key=lambda m: calculate_move_distance(engine, m))
-        
-        # Otherwise, advance furthest
-        return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
-
-
-class ConservativeAgent(Agent):
-    """Agent that plays conservatively"""
-
-    def __init__(self, player_id: int):
-        super().__init__(player_id, "Conservative")
-
-    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
-        """Choose conservative moves"""
-        valid_moves = engine.get_valid_moves(player, eligible_riders)
-        if not valid_moves:
-            return None
-        
-        # Take best move (simplified for action system)
-        return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
-
-
-class AggressiveAgent(Agent):
-    """Agent that plays aggressively for maximum advancement"""
-
-    def __init__(self, player_id: int):
-        super().__init__(player_id, "Aggressive")
-
-    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
-        """Prefer moves for maximum advancement"""
-        valid_moves = engine.get_valid_moves(player, eligible_riders)
-        if not valid_moves:
-            return None
-        
-        # Take the best move for maximum distance
-        return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
-
-
-class CardTypeAgent(Agent):
-    """Agent that prioritizes playing specific card types"""
-
-    def __init__(self, player_id: int, preferred_type: CardType):
-        super().__init__(player_id, f"{preferred_type.value}Focus")
-        self.preferred_type = preferred_type
-
-    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
-        """Prefer playing cards of the preferred type"""
-        valid_moves = engine.get_valid_moves(player, eligible_riders)
-        if not valid_moves:
-            return None
-        
-        # Filter for moves that use preferred card type
-        preferred_moves = [m for m in valid_moves 
-                          if any(c.card_type == self.preferred_type for c in m.cards)]
-        
-        if preferred_moves:
-            # Play preferred card type, maximizing distance
-            return max(preferred_moves, key=lambda m: calculate_move_distance(engine, m))
-        else:
-            # Play any card for maximum distance
-            return max(valid_moves, key=lambda m: calculate_move_distance(engine, m))
-
-
-class AdaptiveAgent(Agent):
-    """Agent that adapts strategy based on terrain ahead"""
-
-    def __init__(self, player_id: int):
-        super().__init__(player_id, "Adaptive")
-
-    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
-        """Adapt strategy based on upcoming terrain, prioritizing drafts over TeamCar when low on cards"""
-        valid_moves = engine.get_valid_moves(player, eligible_riders)
-        if not valid_moves:
-            return None
-        
-        # If hand is low (< 3 cards), try Draft/TeamDraft first, then TeamCar
-        if len(player.hand) < 3:
-            # Check for draft moves
-            draft_move = get_best_draft_move(valid_moves)
-            if draft_move:
-                return draft_move
-            
-            # No draft available, use TeamCar
-            if should_use_team_car(player, valid_moves):
-                team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
-                if team_car_moves:
-                    worst_card = choose_card_to_discard(player)
-                    if worst_card:
-                        team_car_moves[0].cards = [worst_card]
-                    return team_car_moves[0]
-        
-        # Filter out TeamCar for scoring
-        non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
-        
-        # Analyze terrain ahead for each move
-        scored_moves = []
-        for move in non_team_car:
-            score = self._score_move(move, engine)
-            scored_moves.append((move, score))
-        
-        # Return highest scored move
-        if scored_moves:
-            return max(scored_moves, key=lambda x: x[1])[0]
-        return valid_moves[0]
-    
-    def _score_move(self, move: Move, engine: GameEngine) -> float:
-        """Score a move based on multiple factors"""
-        score = 0.0
-        
-        # Base score: distance gained
-        distance_gained = calculate_move_distance(engine, move)
-        score += distance_gained * 10
-        
-        # Calculate target position
-        target_pos = move.rider.position + distance_gained
-        
-        # Check terrain at destination
-        tile = engine.state.get_tile_at_position(target_pos)
-        if tile:
-            # Bonus for landing on sprint or finish
-            if tile.terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
-                score += 50
-            
-            # Check upcoming terrain (next 5 tiles)
-            climb_count = 0
-            for offset in range(1, 6):
-                next_tile = engine.state.get_tile_at_position(target_pos + offset)
-                if next_tile and next_tile.terrain == TerrainType.CLIMB:
-                    climb_count += 1
-            
-            # If climbs ahead and we used climber cards, bonus
-            if climb_count >= 2 and any(c.card_type == CardType.CLIMBER for c in move.cards):
-                score += 20
-            
-            # If flat ahead and we used sprinter cards, bonus
-            if climb_count == 0 and any(c.card_type == CardType.SPRINTER for c in move.cards):
-                score += 20
-        
-        return score
-        
-        return score
 
 
 class ClaudeBotAgent(Agent):
@@ -470,6 +319,9 @@ class ClaudeBotAgent(Agent):
         valid_moves = engine.get_valid_moves(player, eligible_riders)
         if not valid_moves:
             return None
+
+        # Filter out moves that cost cards but have 0 advancement
+        valid_moves = filter_wasteful_moves(valid_moves, engine)
 
         # Score all moves and pick the best
         scored_moves = []
@@ -700,6 +552,14 @@ class ClaudeBotAgent(Agent):
 
     def _score_team_car(self, player: Player, engine: GameEngine) -> float:
         """Score TeamCar action"""
+        # If any unfinished rider exists, strongly prefer any forward movement over TeamCar
+        finish_pos = engine.state.track_length - 1
+        unfinished_riders = [r for r in player.riders if r.position < finish_pos]
+        finished_count = len(player.riders) - len(unfinished_riders)
+        if finished_count >= 2 and unfinished_riders:
+            # Last rider(s) still need to advance — don't loop on TeamCar
+            return -200
+
         hand_size = len(player.hand)
 
         # TeamCar is valuable when hand is low
@@ -782,9 +642,6 @@ class WheelsuckerAgent(Agent):
         # Priority 7: TeamCar
         team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
         if team_car_moves:
-            worst_card = choose_card_to_discard(player)
-            if worst_card:
-                team_car_moves[0].cards = [worst_card]
             return team_car_moves[0]
         
         # Fallback: any move
@@ -852,6 +709,9 @@ class GeminiAgent(Agent):
         if not valid_moves:
             return None
 
+        # Filter out moves that cost cards but have 0 advancement
+        valid_moves = filter_wasteful_moves(valid_moves, engine)
+
         scored_moves = []
         for move in valid_moves:
             score = self._score_move(move, engine, player)
@@ -861,12 +721,6 @@ class GeminiAgent(Agent):
         scored_moves.sort(key=lambda x: x[0], reverse=True)
 
         best_move = scored_moves[0][1]
-
-        # If TeamCar is selected, ensure we pick a card to discard
-        if best_move.action_type == ActionType.TEAM_CAR and not best_move.cards:
-            worst_card = choose_card_to_discard(player)
-            if worst_card:
-                best_move.cards = [worst_card]
 
         return best_move
 
@@ -991,47 +845,56 @@ class TobiBotAgent(Agent):
 
         # Priority 2: Hand management - TeamCar if hand ≤ 6 and no efficient moves
         if len(player.hand) <= 6:
-            # Check if any move has >1 field per card
+            # Check if any move has >=1 field per card
             has_efficient_move = False
             for move in valid_moves:
                 if move.action_type == ActionType.TEAM_CAR:
                     continue
+                advancement = calculate_total_advancement(engine, move)
+                # Skip moves with 0 advancement
+                if advancement == 0:
+                    continue
                 cards_used = len(move.cards)
                 if cards_used == 0:
+                    # Free move with advancement > 0 is efficient
                     has_efficient_move = True
                     break
-                advancement = calculate_total_advancement(engine, move)
-                if advancement / cards_used > 1:
+                if advancement / cards_used >= 1:
                     has_efficient_move = True
                     break
 
             if not has_efficient_move:
                 team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
                 if team_car_moves:
-                    worst_card = choose_card_to_discard(player)
-                    if worst_card:
-                        team_car_moves[0].cards = [worst_card]
                     return team_car_moves[0]
 
-        # Priority 3: Prefer efficient moves
+        # Priority 3: Prefer efficient moves (filter out 0-advancement moves)
         # TeamDraft
-        team_draft_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_DRAFT]
+        team_draft_moves = [m for m in valid_moves
+                           if m.action_type == ActionType.TEAM_DRAFT
+                           and calculate_total_advancement(engine, m) > 0]
         if team_draft_moves:
             return max(team_draft_moves, key=lambda m: calculate_total_advancement(engine, m))
 
         # Draft
-        draft_moves = [m for m in valid_moves if m.action_type == ActionType.DRAFT]
+        draft_moves = [m for m in valid_moves
+                      if m.action_type == ActionType.DRAFT
+                      and calculate_total_advancement(engine, m) > 0]
         if draft_moves:
             return max(draft_moves, key=lambda m: calculate_total_advancement(engine, m))
 
         # TeamPull
-        team_pull_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_PULL]
+        team_pull_moves = [m for m in valid_moves
+                          if m.action_type == ActionType.TEAM_PULL
+                          and calculate_total_advancement(engine, m) > 0]
         if team_pull_moves:
             # Apply priority 4-6 to select best TeamPull
             return self._select_best_move(team_pull_moves, engine, player)
 
-        # Apply priorities 4-6 to remaining moves
-        non_team_car = [m for m in valid_moves if m.action_type != ActionType.TEAM_CAR]
+        # Apply priorities 4-6 to remaining moves (excluding TeamCar and 0-advancement moves)
+        non_team_car = [m for m in valid_moves
+                       if m.action_type != ActionType.TEAM_CAR
+                       and calculate_total_advancement(engine, m) > 0]
         if non_team_car:
             return self._select_best_move(non_team_car, engine, player)
 
@@ -1050,9 +913,6 @@ class TobiBotAgent(Agent):
                     if not can_draft and not can_advance_far:
                         team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
                         if team_car_moves:
-                            worst_card = choose_card_to_discard(player)
-                            if worst_card:
-                                team_car_moves[0].cards = [worst_card]
                             return team_car_moves[0]
 
         # Fallback
@@ -1180,6 +1040,293 @@ class TobiBotAgent(Agent):
         return moves[0]
 
 
+class ClaudeBot2Agent(Agent):
+    """
+    ClaudeBot 2.0: Redesigned based on comprehensive 250-game analysis.
+
+    Adopts TobiBot's proven priority hierarchy approach (97.1% win rate):
+    1. Score points when possible (finish > sprint priority)
+    2. Hand management: TeamCar if hand ≤ 6 AND no efficient move (>1 field/card)
+    3. Prefer efficient moves: TeamDraft > Draft > TeamPull > Pull
+    4. Maximize advancement with terrain-aware optimization
+    5. Position strategically (group with teammates ahead, draft opponents)
+
+    Key metrics to achieve (from winning data):
+    - Card efficiency: <0.40 cards/field (vs losers' 0.50)
+    - Early game: 90+ fields in first third
+    - Free movement: 3+ drafts per game
+    - Finish points: 15+ from finish line
+    - Hand management: 4+ average cards
+
+    Strategy: Strict priority hierarchy with efficiency gating, not weighted scoring.
+    """
+
+    def __init__(self, player_id: int):
+        super().__init__(player_id, "ClaudeBot2.0")
+        from game_engine import TERRAIN_LIMITS
+        self.terrain_limits = TERRAIN_LIMITS
+
+    def choose_move(self, engine: GameEngine, player: Player, eligible_riders: List[Rider] = None) -> Optional[Move]:
+        """Choose move using TobiBot-inspired priority hierarchy"""
+        valid_moves = engine.get_valid_moves(player, eligible_riders)
+        if not valid_moves:
+            return None
+
+        # PRIORITY 1: Score points when possible (finish > sprint)
+        scoring_moves = self._get_scoring_moves(valid_moves, engine)
+        if scoring_moves:
+            # Return move that scores most points, preferring finish over sprint
+            return max(scoring_moves, key=lambda m: self._calculate_points_with_priority(m, engine))
+
+        # PRIORITY 2: Hand management - TeamCar if hand ≤ 6 and no efficient moves
+        if len(player.hand) <= 6:
+            # Check if any move has >=1 field per card efficiency
+            has_efficient_move = False
+            for move in valid_moves:
+                if move.action_type == ActionType.TEAM_CAR:
+                    continue
+                advancement = calculate_total_advancement(engine, move)
+                if advancement == 0:
+                    continue
+                cards_used = len(move.cards)
+                if cards_used == 0:
+                    has_efficient_move = True
+                    break
+                if advancement / cards_used >= 1.0:
+                    has_efficient_move = True
+                    break
+
+            if not has_efficient_move:
+                team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+                if team_car_moves:
+                    return team_car_moves[0]
+
+        # PRIORITY 3: Prefer efficient free movement (TeamDraft > Draft > TeamPull)
+        # Filter out 0-advancement moves
+        productive_moves = [m for m in valid_moves
+                           if m.action_type != ActionType.TEAM_CAR
+                           and calculate_total_advancement(engine, m) > 0]
+
+        if not productive_moves:
+            # Fallback to TeamCar if nothing productive
+            team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+            if team_car_moves:
+                return team_car_moves[0]
+            return valid_moves[0] if valid_moves else None
+
+        # TeamDraft: Multiple riders move for free
+        team_draft_moves = [m for m in productive_moves if m.action_type == ActionType.TEAM_DRAFT]
+        if team_draft_moves:
+            return max(team_draft_moves, key=lambda m: calculate_total_advancement(engine, m))
+
+        # Draft: Single rider moves for free
+        draft_moves = [m for m in productive_moves if m.action_type == ActionType.DRAFT]
+        if draft_moves:
+            return max(draft_moves, key=lambda m: calculate_total_advancement(engine, m))
+
+        # TeamPull: One rider pulls, others draft (efficient team coordination)
+        team_pull_moves = [m for m in productive_moves if m.action_type == ActionType.TEAM_PULL]
+        if team_pull_moves:
+            return self._select_best_team_pull(team_pull_moves, engine, player)
+
+        # PRIORITY 4: Remaining moves (Pull, Attack) - select with terrain optimization
+        remaining_moves = [m for m in productive_moves
+                          if m.action_type in [ActionType.PULL, ActionType.ATTACK]]
+        if remaining_moves:
+            return self._select_best_advancement_move(remaining_moves, engine, player)
+
+        # Fallback: any productive move
+        if productive_moves:
+            return max(productive_moves, key=lambda m: calculate_total_advancement(engine, m))
+
+        # Last resort: TeamCar
+        team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
+        if team_car_moves:
+            return team_car_moves[0]
+
+        return valid_moves[0] if valid_moves else None
+
+    def _get_scoring_moves(self, valid_moves: List[Move], engine: GameEngine) -> List[Move]:
+        """Get moves that can score points at sprint or finish"""
+        scoring_moves = []
+        for move in valid_moves:
+            if move.action_type == ActionType.TEAM_CAR:
+                continue
+            if self._calculate_points(move, engine) > 0:
+                scoring_moves.append(move)
+        return scoring_moves
+
+    def _calculate_points(self, move: Move, engine: GameEngine) -> int:
+        """Calculate total points this move would score"""
+        points = 0
+        riders = [move.rider]
+        if move.drafting_riders:
+            riders.extend(move.drafting_riders)
+
+        for rider in riders:
+            distance = self._get_rider_movement(move, rider, engine)
+            if distance == 0:
+                continue
+
+            old_pos = rider.position
+            new_pos = min(old_pos + distance, engine.state.track_length - 1)
+
+            for pos in range(old_pos + 1, new_pos + 1):
+                tile = engine.state.get_tile_at_position(pos)
+                if tile and tile.terrain in [TerrainType.SPRINT, TerrainType.FINISH]:
+                    arrivals = engine.state.sprint_arrivals.get(pos, [])
+                    if rider in arrivals:
+                        continue
+                    current_rank = len(arrivals)
+                    if tile.sprint_points and current_rank < len(tile.sprint_points):
+                        points += tile.sprint_points[current_rank]
+        return points
+
+    def _calculate_points_with_priority(self, move: Move, engine: GameEngine) -> float:
+        """Calculate points with finish line heavily prioritized over sprints"""
+        finish_points = 0
+        sprint_points = 0
+
+        riders = [move.rider]
+        if move.drafting_riders:
+            riders.extend(move.drafting_riders)
+
+        for rider in riders:
+            distance = self._get_rider_movement(move, rider, engine)
+            if distance == 0:
+                continue
+
+            old_pos = rider.position
+            new_pos = min(old_pos + distance, engine.state.track_length - 1)
+
+            for pos in range(old_pos + 1, new_pos + 1):
+                tile = engine.state.get_tile_at_position(pos)
+                if tile and tile.terrain == TerrainType.FINISH:
+                    arrivals = engine.state.sprint_arrivals.get(pos, [])
+                    if rider not in arrivals:
+                        current_rank = len(arrivals)
+                        if tile.sprint_points and current_rank < len(tile.sprint_points):
+                            finish_points += tile.sprint_points[current_rank]
+                elif tile and tile.terrain == TerrainType.SPRINT:
+                    arrivals = engine.state.sprint_arrivals.get(pos, [])
+                    if rider not in arrivals:
+                        current_rank = len(arrivals)
+                        if tile.sprint_points and current_rank < len(tile.sprint_points):
+                            sprint_points += tile.sprint_points[current_rank]
+
+        # Finish points are 55% of winner's score, weight them 3x higher
+        return finish_points * 3.0 + sprint_points
+
+    def _get_rider_movement(self, move: Move, rider: Rider, engine: GameEngine) -> int:
+        """Get movement for a specific rider in a move"""
+        if rider == move.rider:
+            # Primary rider
+            if move.action_type == ActionType.PULL:
+                base = engine._calculate_pull_movement(move.rider, move.cards)
+            elif move.action_type == ActionType.ATTACK:
+                base = engine._calculate_attack_movement(move.rider, move.cards)
+            elif move.action_type in [ActionType.DRAFT, ActionType.TEAM_DRAFT]:
+                base = engine.state.last_move.get('movement', 0) if engine.state.last_move else 0
+            elif move.action_type == ActionType.TEAM_PULL:
+                base = engine._calculate_pull_movement(move.rider, move.cards)
+            else:
+                return 0
+            return engine._calculate_limited_movement(rider, rider.position, base)
+        else:
+            # Drafting rider
+            if move.action_type == ActionType.TEAM_PULL:
+                base = engine._calculate_pull_movement(move.rider, move.cards)
+            elif move.action_type == ActionType.TEAM_DRAFT:
+                base = engine.state.last_move.get('movement', 0) if engine.state.last_move else 0
+            else:
+                return 0
+            return engine._calculate_limited_movement(rider, rider.position, base)
+
+    def _select_best_team_pull(self, moves: List[Move], engine: GameEngine, player: Player) -> Move:
+        """Select best TeamPull considering efficiency and positioning"""
+        scored_moves = []
+
+        for move in moves:
+            score = 0.0
+
+            # Base score: total advancement
+            total_advancement = calculate_total_advancement(engine, move)
+            score += total_advancement * 10
+
+            # Card efficiency bonus
+            cards_used = len(move.cards)
+            if cards_used > 0 and total_advancement > 0:
+                efficiency = total_advancement / cards_used
+                score += efficiency * 20  # Reward high efficiency
+
+            # Bonus for grouping riders together (team coordination)
+            destination = min(move.rider.position + self._get_rider_movement(move, move.rider, engine),
+                            engine.state.track_length - 1)
+            riders_at_dest = engine.state.get_riders_at_position(destination)
+            own_riders = [r for r in riders_at_dest if r.player_id == player.player_id and r != move.rider]
+            score += len(own_riders) * 15
+
+            # Terrain matching bonus
+            score += self._score_terrain_matching_simple(move, engine)
+
+            scored_moves.append((score, move))
+
+        return max(scored_moves, key=lambda x: x[0])[1]
+
+    def _select_best_advancement_move(self, moves: List[Move], engine: GameEngine, player: Player) -> Move:
+        """Select best Pull/Attack move with terrain optimization"""
+        scored_moves = []
+
+        for move in moves:
+            score = 0.0
+
+            # Base score: actual movement after terrain limits
+            distance = self._get_rider_movement(move, move.rider, engine)
+            score += distance * 10
+
+            # Card efficiency penalty
+            cards_used = len(move.cards)
+            if cards_used > 0 and distance > 0:
+                efficiency = distance / cards_used
+                score += efficiency * 15
+            else:
+                score -= 50  # Penalize inefficient moves
+
+            # Terrain matching
+            score += self._score_terrain_matching_simple(move, engine)
+
+            # Positioning for future drafts
+            destination = min(move.rider.position + distance, engine.state.track_length - 1)
+            riders_at_dest = engine.state.get_riders_at_position(destination)
+            opponent_riders = [r for r in riders_at_dest if r.player_id != player.player_id]
+            score += len(opponent_riders) * 20  # Good for future drafting
+
+            scored_moves.append((score, move))
+
+        return max(scored_moves, key=lambda x: x[0])[1]
+
+    def _score_terrain_matching_simple(self, move: Move, engine: GameEngine) -> float:
+        """Simple terrain matching bonus"""
+        score = 0.0
+        rider_type = move.rider.rider_type
+        current_terrain = engine._get_terrain_at_position(move.rider.position)
+
+        # Bonus for good matches
+        if rider_type == CardType.CLIMBER and current_terrain == TerrainType.CLIMB:
+            score += 30
+        elif rider_type == CardType.SPRINTER and current_terrain in [TerrainType.FLAT, TerrainType.DESCENT]:
+            score += 25
+        elif rider_type == CardType.ROULEUR:
+            score += 10
+
+        # Penalty for terrain-limited riders
+        if (rider_type, current_terrain) in self.terrain_limits:
+            score -= 20
+
+        return score
+
+
+
 class ChatGPTAgent(Agent):
     """
     ChatGPT Bot: A balanced agent that values steady advancement, sprint points,
@@ -1202,10 +1349,10 @@ class ChatGPTAgent(Agent):
             if should_use_team_car(player, valid_moves):
                 team_car_moves = [m for m in valid_moves if m.action_type == ActionType.TEAM_CAR]
                 if team_car_moves:
-                    worst_card = choose_card_to_discard(player)
-                    if worst_card:
-                        team_car_moves[0].cards = [worst_card]
                     return team_car_moves[0]
+
+        # Filter out moves that cost cards but have 0 advancement
+        valid_moves = filter_wasteful_moves(valid_moves, engine)
 
         scored_moves = []
         for move in valid_moves:
@@ -1213,14 +1360,7 @@ class ChatGPTAgent(Agent):
             scored_moves.append((score, move))
 
         scored_moves.sort(key=lambda x: x[0], reverse=True)
-        best_move = scored_moves[0][1]
-
-        if best_move.action_type == ActionType.TEAM_CAR and not best_move.cards:
-            worst_card = choose_card_to_discard(player)
-            if worst_card:
-                best_move.cards = [worst_card]
-
-        return best_move
+        return scored_moves[0][1]
 
     def _score_move(self, move: Move, engine: GameEngine, player: Player) -> float:
         # TeamCar is a fallback unless hand is low
@@ -1305,20 +1445,12 @@ def create_agent(agent_type: str, player_id: int) -> Agent:
     agent_map = {
         'random': RandomAgent,
         'marc_soler': MarcSolerAgent,
-        'lead_rider': LeadRiderAgent,
-        'balanced': BalancedAgent,
-        'sprint_hunter': SprintHunterAgent,
-        'conservative': ConservativeAgent,
-        'aggressive': AggressiveAgent,
-        'adaptive': AdaptiveAgent,
         'wheelsucker': WheelsuckerAgent,
         'gemini': GeminiAgent,
         'chatgpt': ChatGPTAgent,
         'claudebot': ClaudeBotAgent,
+        'claudebot2': ClaudeBot2Agent,
         'tobibot': TobiBotAgent,
-        'rouleur_focus': lambda pid: CardTypeAgent(pid, CardType.ROULEUR),
-        'sprinter_focus': lambda pid: CardTypeAgent(pid, CardType.SPRINTER),
-        'climber_focus': lambda pid: CardTypeAgent(pid, CardType.CLIMBER),
     }
 
     if agent_type not in agent_map:
@@ -1330,8 +1462,67 @@ def create_agent(agent_type: str, player_id: int) -> Agent:
 def get_available_agents() -> List[str]:
     """Get list of all available agent types"""
     return [
-        'random', 'marc_soler', 'lead_rider', 'balanced',
-        'sprint_hunter', 'conservative', 'aggressive', 'adaptive',
-        'wheelsucker', 'gemini', 'chatgpt', 'claudebot', 'tobibot',
-        'rouleur_focus', 'sprinter_focus', 'climber_focus'
+        'random', 'marc_soler',
+        'wheelsucker', 'gemini', 'chatgpt', 'claudebot', 'claudebot2', 'tobibot'
     ]
+
+
+def verify_no_wasteful_moves() -> bool:
+    """Verify that all agents avoid choosing moves that cost cards but have 0 advancement.
+
+    This is a self-test to ensure agents never waste cards on 0-advancement moves.
+    Returns True if all agents pass, False otherwise.
+    """
+    from game_state import GameState, Card
+    from game_engine import GameEngine
+
+    # Create test scenario: Sprinter on climb with only Sprinter cards
+    # Sprinter is terrain-limited on climbs, so moves may have 0 advancement
+    state = GameState(num_players=2)
+    engine = GameEngine(state)
+
+    # Position Sprinter at middle of climb tile
+    state.players[0].riders[1].position = 14  # Sprinter
+
+    # Give player only Sprinter cards
+    state.players[0].hand = [
+        Card(CardType.SPRINTER),
+        Card(CardType.SPRINTER),
+        Card(CardType.SPRINTER),
+    ]
+
+    all_passed = True
+    failures = []
+
+    for agent_type in get_available_agents():
+        # Reset scenario for each agent
+        state = GameState(num_players=2)
+        engine = GameEngine(state)
+        state.players[0].riders[1].position = 14
+        state.players[0].hand = [
+            Card(CardType.SPRINTER),
+            Card(CardType.SPRINTER),
+            Card(CardType.SPRINTER),
+        ]
+
+        agent = create_agent(agent_type, 0)
+        chosen_move = agent.choose_move(engine, state.players[0])
+
+        if chosen_move:
+            # Free moves (Draft, TeamDraft, TeamCar) are always acceptable
+            if chosen_move.action_type in [ActionType.DRAFT, ActionType.TEAM_DRAFT, ActionType.TEAM_CAR]:
+                continue
+
+            # Paid moves must have advancement > 0
+            if len(chosen_move.cards) > 0:
+                advancement = calculate_total_advancement(engine, chosen_move)
+                if advancement == 0:
+                    failures.append(f"{agent_type}: chose {chosen_move.action_type.value} with {len(chosen_move.cards)} cards but 0 advancement")
+                    all_passed = False
+
+    if not all_passed:
+        print("WASTEFUL MOVE VERIFICATION FAILED:")
+        for failure in failures:
+            print(f"  ✗ {failure}")
+
+    return all_passed

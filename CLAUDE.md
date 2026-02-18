@@ -15,6 +15,32 @@ Chasse Patate — a cycling board game balance simulator. Runs thousands of AI-v
 pip install -r requirements.txt
 ```
 
+## Configuration
+
+The game supports customizable parameters through `config.json`.
+
+**Quick start:**
+```bash
+# View current configuration
+python game_config.py show
+
+# Validate configuration
+python game_config.py validate
+
+# Create a preset (quick, marathon, mountain, cobbles)
+python game_config.py preset quick
+
+# Reset to defaults
+python game_config.py reset
+```
+
+**Configurable parameters:**
+- **Tile configuration**: Which race tiles to use and in what order
+- **Starting hand**: Card composition at game start (Energy, Rouleur, Sprinter, Climber, random)
+- **Checkpoint draws**: How many cards drawn at mid-tile and new-tile checkpoints
+
+All scripts automatically load `config.json` when creating games.
+
 ## Running
 
 ```bash
@@ -23,12 +49,6 @@ python quick_test.py
 
 # Run comprehensive multi-player tournament (2/3/4 players, 250 games)
 python run_tournament.py
-
-# Generate analysis report from existing game logs
-python generate_report.py
-
-# Usage examples and tutorials
-python example_usage.py
 
 # Play interactively against bots (press 'r' during play to view card reference)
 python play.py
@@ -46,16 +66,16 @@ python test_game_rules.py
 |---|---|
 | `game_state.py` | Core data structures: cards, riders, players, board, El Patron rule |
 | `game_engine.py` | Game rules, move validation, terrain limits |
-| `agents.py` | AI agent implementations (15 strategies) |
+| `game_config.py` | Configuration system, CLI management, presets |
+| `agents.py` | AI agent implementations (8 strategies) |
 | `simulator.py` | Game execution, logging, batch runs, tournaments |
 | `analysis.py` | Statistical analysis and report generation |
 | `quick_test.py` | Fast balance testing script |
 | `run_tournament.py` | Multi-player tournament runner (2/3/4 players, all combinations) |
-| `generate_report.py` | Standalone report generator |
-| `example_usage.py` | Usage examples |
 | `play.py` | Interactive play against bots (terminal UI) |
 | `game_analyzer.py` | Replay games from logs with full visualization |
 | `test_game_rules.py` | Comprehensive unit tests: game rules, mechanics, agents, tournament features |
+| `config.json` | Game configuration file (tiles, starting hand, checkpoints) |
 
 Output goes to `game_logs/` (gitignored).
 
@@ -139,7 +159,7 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 
 ## Available Agents
 
-15 agent types: `random`, `marc_soler`, `lead_rider`, `balanced`, `sprint_hunter`, `conservative`, `aggressive`, `adaptive`, `wheelsucker`, `gemini`, `chatgpt`, `claudebot`, `tobibot`, `rouleur_focus`, `sprinter_focus`, `climber_focus`
+8 agent types: `random`, `marc_soler`, `wheelsucker`, `gemini`, `chatgpt`, `claudebot`, `claudebot2`, `tobibot`
 
 ### Featured Agents
 
@@ -149,6 +169,8 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 - Card economy and hand management
 - Drafting efficiency (free movement is valuable)
 - Rider specialization (right rider for right terrain)
+
+**ClaudeBot2** - Enhanced multi-factor scoring with improved terrain awareness and strategic depth.
 
 **Gemini** - Balanced scoring:
 - Total advancement (distance x riders)
@@ -197,6 +219,11 @@ Limits apply only to the portion of movement on limited terrain. In team moves, 
 
 ## Recent Changes
 
+- **Added game configuration system** (`config.json`, `game_config.py`)
+  - Customizable tile configuration
+  - Configurable starting hand composition
+  - Adjustable checkpoint card draws
+  - Auto-loaded by all game scripts
 - Added terrain limits rule (Sprinter/Rouleur/Climber restrictions)
 - Added El Patron rule (rotating turn order for tied positions)
 - Added ClaudeBotAgent (terrain-aware multi-factor AI)

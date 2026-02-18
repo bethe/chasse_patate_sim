@@ -22,6 +22,19 @@ from agents import create_agent
 import pandas as pd
 from datetime import datetime
 import os
+import re
+
+
+def _get_winning_agent(row):
+    """Extract the winning agent type from the player columns using the winner string's player number."""
+    winner = row.get('winner', '')
+    if not winner or pd.isna(winner):
+        return None
+    match = re.search(r'Player (\d+)', winner)
+    if match:
+        player_idx = int(match.group(1))
+        return row.get(f'player_{player_idx}_agent')
+    return None
 
 
 def run_multiplayer_tournament(agent_types, games_per_combination=10):
@@ -52,8 +65,8 @@ def run_multiplayer_tournament(agent_types, games_per_combination=10):
     all_results = []
     total_games = 0
 
-    # Run tournaments for 2, 3, and 4 players
-    for num_players in [2, 3, 4]:
+    # Run tournaments for 3 and 4 players
+    for num_players in [3, 4]:
         print(f"\n{'='*80}")
         print(f"{num_players}-PLAYER GAMES")
         print(f"{'='*80}")
@@ -182,11 +195,7 @@ def print_combination_stats(results_subset, combo, num_players):
 
     for result in results_subset:
         # Determine winner
-        winner_agent = None
-        for i, agent in enumerate(combo):
-            if agent in result['winner'].lower():
-                winner_agent = agent
-                break
+        winner_agent = _get_winning_agent(result)
 
         # Count games and wins by position
         for pos in range(num_players):
@@ -243,7 +252,7 @@ def analyze_position_bias(df, agent_types):
                     continue
 
                 # Count wins
-                wins = len(games_at_pos[games_at_pos['winner'].str.contains(agent, case=False, na=False)])
+                wins = len(games_at_pos[games_at_pos['winning_agent'] == agent])
                 win_rate = (wins / len(games_at_pos)) * 100 if len(games_at_pos) > 0 else 0
 
                 # Calculate average score
@@ -275,7 +284,7 @@ def analyze_position_bias(df, agent_types):
 
                 games_at_pos = subset[subset[agent_col] == agent]
                 total_at_pos += len(games_at_pos)
-                wins_at_pos += len(games_at_pos[games_at_pos['winner'].str.contains(agent, case=False, na=False)])
+                wins_at_pos += len(games_at_pos[games_at_pos['winning_agent'] == agent])
 
                 score_col = f'player_{pos}_score'
                 if score_col in games_at_pos.columns:
@@ -305,14 +314,17 @@ def print_summary(df, agent_types):
     print("TOURNAMENT SUMMARY")
     print("="*80 + "\n")
 
+    # Add winning_agent column for exact matching
+    df = df.copy()
+    df['winning_agent'] = df.apply(_get_winning_agent, axis=1)
+
     # 1. Overall Win Counts by Agent
     print("=" * 80)
     print("1. OVERALL WINS BY AGENT")
     print("=" * 80)
     win_counts = {}
     for agent in agent_types:
-        # Count wins where winner string contains the agent name
-        wins = len(df[df['winner'].str.contains(agent, case=False, na=False)])
+        wins = len(df[df['winning_agent'] == agent])
         win_counts[agent] = wins
         print(f"  {agent:20s}: {wins:4d} wins")
 
@@ -358,7 +370,7 @@ def print_summary(df, agent_types):
         print("  " + "-" * 76)
 
         for agent in agent_types:
-            wins = len(subset[subset['winner'].str.contains(agent, case=False, na=False)])
+            wins = len(subset[subset['winning_agent'] == agent])
             win_rate = (wins / len(subset) * 100) if len(subset) > 0 else 0
             print(f"    {agent:20s}: {wins:3d} wins ({win_rate:5.1f}%)")
 
@@ -382,7 +394,7 @@ def print_summary(df, agent_types):
                         ((two_player['player_0_agent'] == agent2) & (two_player['player_1_agent'] == agent1))
                     ]
 
-                    agent1_wins = len(matches[matches['winner'].str.contains(agent1, case=False, na=False)])
+                    agent1_wins = len(matches[matches['winning_agent'] == agent1])
                     total_matches = len(matches)
 
                     if total_matches > 0:
@@ -471,7 +483,7 @@ def print_summary(df, agent_types):
 
 if __name__ == "__main__":
     # Define agents for tournament
-    agents = ['chatgpt', 'gemini', 'claudebot', 'tobibot', 'marc_soler']
+    agents = ['tobibot', 'claudebot2', 'tobibot', 'claudebot2']
 
     print("\nStarting comprehensive tournament...")
     print(f"This will run approximately 250 games (may take 10-20 minutes)\n")

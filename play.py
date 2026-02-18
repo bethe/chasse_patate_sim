@@ -318,6 +318,32 @@ def print_track(state: GameState):
         print()
 
 
+def print_manual():
+    """Print the player manual from MANUAL.md."""
+    manual_path = Path(__file__).parent / "MANUAL.md"
+
+    if not manual_path.exists():
+        print("\n" + "="*70)
+        print(Colors.bold("  MANUAL NOT FOUND"))
+        print("="*70)
+        print("  The manual file (MANUAL.md) could not be found.")
+        print("="*70 + "\n")
+        return
+
+    try:
+        with open(manual_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        print("\n" + "="*70)
+        print(Colors.bold("  CHASSE PATATE - PLAYER MANUAL"))
+        print("="*70)
+        print(content)
+        print("="*70)
+        input("\n[Press Enter to continue...]")
+    except Exception as e:
+        print(f"\n  Error reading manual: {e}\n")
+
+
 def print_card_reference_table():
     """Print a reference table showing all card movement values for all terrains."""
     print("\n" + "="*70)
@@ -438,19 +464,23 @@ def prompt_choice(prompt: str, options: list, allow_cancel: bool = False) -> int
     """Ask user to pick one option by number. Returns index.
 
     Special commands:
+    - 'm': Show player manual
     - 'r': Show card reference table
-    - 'c': Cancel (if allow_cancel=True)
+    - 'b': Go back (if allow_cancel=True)
     """
     while True:
         print(prompt)
         for i, option in enumerate(options):
             print(f"  [{i}] {option}")
         if allow_cancel:
-            print(f"  [c] Cancel / go back")
-        print(f"  [r] Show card reference table")
+            print(f"  [b] Go back")
+        print(f"  [m] Show player manual  |  [r] Show card reference table")
         raw = input("> ").strip().lower()
-        if allow_cancel and raw == "c":
+        if allow_cancel and raw == "b":
             return -1
+        if raw == "m":
+            print_manual()
+            continue  # Show prompt again
         if raw == "r":
             print_card_reference_table()
             continue  # Show prompt again
@@ -468,6 +498,7 @@ def prompt_multi_choice(prompt: str, options: list, min_sel: int = 1,
     """Ask user to pick multiple options (comma-separated). Returns list of indices, or None if cancelled.
 
     Special commands:
+    - 'm': Show player manual
     - 'r': Show card reference table
     - 'b': Go back (if allow_cancel=True)
     """
@@ -480,11 +511,14 @@ def prompt_multi_choice(prompt: str, options: list, min_sel: int = 1,
         hint = f"  (select {min_sel}-{max_sel}, comma-separated)"
         if allow_cancel:
             hint += "  |  [b] go back"
-        hint += "  |  [r] reference"
+        hint += "  |  [m] manual  |  [r] reference"
         print(hint)
         raw = input("> ").strip().lower()
         if allow_cancel and raw == "b":
             return None
+        if raw == "m":
+            print_manual()
+            continue  # Show prompt again
         if raw == "r":
             print_card_reference_table()
             continue  # Show prompt again
@@ -601,10 +635,14 @@ class HumanAgent(Agent):
             return self._handle_team_car(engine, player, rider, terrain)
 
         if action == ActionType.TEAM_DRAFT:
-            return self._handle_team_draft(filtered, rider)
+            # Only show options where the chosen rider is the primary rider
+            primary_moves = [m for m in filtered if m.rider == rider]
+            return self._handle_team_draft(primary_moves, rider)
 
         if action == ActionType.TEAM_PULL:
-            return self._handle_team_pull(engine, player, filtered, rider, terrain)
+            # Only show options where the chosen rider is the primary rider
+            primary_moves = [m for m in filtered if m.rider == rider]
+            return self._handle_team_pull(engine, player, primary_moves, rider, terrain)
 
         # Pull or Attack: pick cards
         return self._handle_card_action(engine, player, action, rider, terrain)

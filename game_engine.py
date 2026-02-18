@@ -414,16 +414,17 @@ class GameEngine:
         # Check if rider reached new checkpoint(s) (every 10 fields)
         cards_drawn = 0
         checkpoints_reached = []
-        
+
         # Check all checkpoints from old position to new position
         for checkpoint in range(10, new_position + 1, 10):
             if checkpoint > old_position and not self.state.has_rider_reached_checkpoint(move.rider, checkpoint):
                 # This is a new checkpoint for this rider
                 self.state.mark_checkpoint_reached(move.rider, checkpoint)
                 checkpoints_reached.append(checkpoint)
-                
-                # Draw 3 cards for this checkpoint
-                for _ in range(3):
+
+                # Draw cards for this checkpoint (amount depends on checkpoint position)
+                num_cards_to_draw = self.state.config.checkpoints.get_cards_for_checkpoint(checkpoint)
+                for _ in range(num_cards_to_draw):
                     new_card = self.state.draw_card()
                     if new_card:
                         player.hand.append(new_card)
@@ -495,26 +496,11 @@ class GameEngine:
                 player.hand.append(new_card)
                 cards_drawn.append(new_card.card_type.value)
         
-        # Now choose which card to discard from the UPDATED hand
-        # Priority: Discard Energy cards first, then others
+        # Choose which card to discard from the UPDATED hand (after draw)
         card_to_discard = None
-        
-        # If agent specified a card type to discard via move.cards
-        if move.cards and len(move.cards) > 0:
-            # Agent pre-selected a card type - find a matching card in current hand
-            target_card_type = move.cards[0].card_type
-            matching_cards = [c for c in player.hand if c.card_type == target_card_type]
-            if matching_cards:
-                card_to_discard = matching_cards[0]
-        
-        # If no card specified or not found, use default strategy
-        if not card_to_discard and player.hand:
-            # Prefer Energy cards
-            energy_cards = [c for c in player.hand if c.is_energy_card()]
-            if energy_cards:
-                card_to_discard = energy_cards[0]
-            else:
-                card_to_discard = player.hand[0]
+        if player.hand:
+            from agents import choose_card_to_discard
+            card_to_discard = choose_card_to_discard(player, self)
         
         card_discarded = None
         if card_to_discard:
@@ -621,9 +607,10 @@ class GameEngine:
                 self.state.mark_checkpoint_reached(move.rider, checkpoint)
                 if checkpoint not in checkpoints_reached:
                     checkpoints_reached.append(checkpoint)
-                
-                # Draw 3 cards for this checkpoint
-                for _ in range(3):
+
+                # Draw cards for this checkpoint (amount depends on checkpoint position)
+                num_cards_to_draw = self.state.config.checkpoints.get_cards_for_checkpoint(checkpoint)
+                for _ in range(num_cards_to_draw):
                     new_card = self.state.draw_card()
                     if new_card:
                         player.hand.append(new_card)
@@ -644,9 +631,10 @@ class GameEngine:
                         self.state.mark_checkpoint_reached(drafter_rider, checkpoint)
                         if checkpoint not in checkpoints_reached:
                             checkpoints_reached.append(checkpoint)
-                        
-                        # Draw 3 cards for this checkpoint
-                        for _ in range(3):
+
+                        # Draw cards for this checkpoint (amount depends on checkpoint position)
+                        num_cards_to_draw = self.state.config.checkpoints.get_cards_for_checkpoint(checkpoint)
+                        for _ in range(num_cards_to_draw):
                             new_card = self.state.draw_card()
                             if new_card:
                                 player.hand.append(new_card)
@@ -742,9 +730,10 @@ class GameEngine:
                         self.state.mark_checkpoint_reached(drafter_rider, checkpoint)
                         if checkpoint not in checkpoints_reached:
                             checkpoints_reached.append(checkpoint)
-                        
-                        # Draw 3 cards for this checkpoint
-                        for _ in range(3):
+
+                        # Draw cards for this checkpoint (amount depends on checkpoint position)
+                        num_cards_to_draw = self.state.config.checkpoints.get_cards_for_checkpoint(checkpoint)
+                        for _ in range(num_cards_to_draw):
                             new_card = self.state.draw_card()
                             if new_card:
                                 player.hand.append(new_card)

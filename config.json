@@ -1,0 +1,14 @@
+{
+  "tile_config": [1, 5, 4],
+  "starting_hand": {
+    "energy_cards": 3,
+    "rouleur_cards": 2,
+    "sprinter_cards": 2,
+    "climber_cards": 2,
+    "random_cards": 3
+  },
+  "checkpoints": {
+    "mid_tile_checkpoint": 2,
+    "new_tile_checkpoint": 2
+  }
+}
