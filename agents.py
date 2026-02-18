@@ -1453,6 +1453,11 @@ def create_agent(agent_type: str, player_id: int) -> Agent:
         'tobibot': TobiBotAgent,
     }
 
+    # PPO agent: lazy import to avoid torch dependency for non-ML users
+    if agent_type == 'ppo':
+        from ml.ml_agent import PPOAgent
+        return PPOAgent(player_id)
+
     if agent_type not in agent_map:
         raise ValueError(f"Unknown agent type: {agent_type}")
 
@@ -1463,7 +1468,8 @@ def get_available_agents() -> List[str]:
     """Get list of all available agent types"""
     return [
         'random', 'marc_soler',
-        'wheelsucker', 'gemini', 'chatgpt', 'claudebot', 'claudebot2', 'tobibot'
+        'wheelsucker', 'gemini', 'chatgpt', 'claudebot', 'claudebot2', 'tobibot',
+        'ppo'
     ]
 
 
