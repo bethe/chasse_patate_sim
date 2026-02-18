@@ -149,6 +149,7 @@ def collect_trajectory(network: ChassePatatePolicyNetwork,
     while not state.game_over and state.current_round < max_rounds:
         state.start_new_round()
         round_move_results: list = []  # RL agent's move results this round
+        round_start_idx = len(transitions)  # track where this round's transitions begin
 
         while True:
             turn_info = state.determine_next_turn()
@@ -213,19 +214,22 @@ def collect_trajectory(network: ChassePatatePolicyNetwork,
             if state.check_game_over():
                 break
 
-        # Add per-round reward to the last RL transition this round
-        if round_move_results and transitions:
+        # Spread per-round reward evenly across all RL transitions this round
+        round_transition_count = len(transitions) - round_start_idx
+        if round_move_results and round_transition_count > 0:
             round_r = compute_round_reward(round_move_results, state.track_length)
-            last = transitions[-1]
-            transitions[-1] = Transition(
-                state_vec=last.state_vec,
-                move_feats=last.move_feats,
-                action_idx=last.action_idx,
-                log_prob=last.log_prob,
-                value=last.value,
-                reward=last.reward + round_r,
-                done=last.done,
-            )
+            per_transition_r = round_r / round_transition_count
+            for idx in range(round_start_idx, len(transitions)):
+                t = transitions[idx]
+                transitions[idx] = Transition(
+                    state_vec=t.state_vec,
+                    move_feats=t.move_feats,
+                    action_idx=t.action_idx,
+                    log_prob=t.log_prob,
+                    value=t.value,
+                    reward=t.reward + per_transition_r,
+                    done=t.done,
+                )
 
     # Handle round-limit
     if not state.game_over:

@@ -53,12 +53,12 @@ The network scores each valid move individually (state embedding + move features
   - Points scored this turn / 30
   - Advancement bonus: `0.01 * (total_advancement / track_length)`
   - Hand delta bonus: `0.01 * ((hand_after - hand_before) / 10)`
-- **Per-round** (added to last transition of each round):
+- **Per-round** (spread evenly across all transitions in the round):
   - Cumulative points across all turns / 30
   - Cumulative advancement: `0.01 * (total_advancement / track_length)`
   - Cumulative hand delta: `0.01 * (hand_delta / 10)`
 
-Both levels are intentional: per-step rewards good individual moves, per-round rewards good round-level resource allocation (e.g. sacrificing one rider's advancement to save cards for a more impactful move elsewhere).
+Both levels are intentional: per-step rewards good individual moves, per-round rewards good round-level resource allocation (e.g. sacrificing one rider's advancement to save cards for a more impactful move elsewhere). The round reward is spread evenly so all moves in the round share credit for the round outcome, avoiding over-rewarding the last move.
 
 ## Training
 
